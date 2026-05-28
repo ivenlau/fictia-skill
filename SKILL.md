@@ -26,6 +26,7 @@ When the user invokes this skill:
    - No project found → **New Project** workflow
    - Project found, stages not started → **Start Pipeline** workflow
    - Project found, some stages confirmed → **Continue Pipeline** workflow
+   - User asks to export → **Export** workflow
    - User has a specific request → handle directly
 
 ## Workflow: New Project
@@ -227,6 +228,23 @@ When the user wants to create a new Fictia project:
 4. **Create placeholder files**: Write empty placeholder markdown files with titles for each expected output file.
 
 5. **Begin Stage 1**: Start the pipeline with genre analysis.
+
+## Workflow: Export
+
+When the user wants to export the novel as a single file:
+
+1. **Read `project.yaml`** to get the project name and author.
+2. **Ask format** (if not specified): `txt` (plain text) or `md` (markdown). Default: `md`.
+3. **Collect chapters**: Use Glob `chapters/act-*/ch*.md`, sort by filename (ch01, ch02, ...).
+4. **For each chapter file**:
+   - Read the file content
+   - Strip the `### 写作备注` section and everything after it (including the `---` separator before it)
+   - The result is the clean chapter prose only
+5. **Assemble output**:
+   - **md format**: Add a header `# {项目名}`, optional `> 作者: {作者}`, then `---`, then concatenate all cleaned chapters separated by `---`
+   - **txt format**: Add a header `{项目名}` with `=` underline, then concatenate all cleaned chapters. Strip markdown formatting (`#`, `**`, `*`) from the text
+6. **Write** the assembled content to `{项目名}.md` or `{项目名}.txt` in the project root directory.
+7. **Report**: tell the user the output path and total chapter count.
 
 ## Chapter Writing Sessions
 
