@@ -2,7 +2,7 @@
 
 These procedures replace the TypeScript `context-extractor.ts` module. They describe how to gather and compress context when acting as each agent. Follow these procedures to manage context efficiently.
 
-## Character Registry (Tier 1 Summary)
+## Character Registry (Tier 1 Summary) — `buildCharacterRegistry`
 
 When you need a lightweight overview of all characters:
 
@@ -14,7 +14,7 @@ When you need a lightweight overview of all characters:
 
 This is the "Tier 1" context — always load this when any agent needs character information.
 
-## Character Quick Card
+## Character Quick Card — `buildCharacterQuickCard`
 
 When you need detailed info for a specific character:
 
@@ -23,7 +23,7 @@ When you need detailed info for a specific character:
 3. From the body, extract: key background events, motivation, ability summary
 4. Present as a compressed card (~300-500 chars)
 
-## Chapter Narrative Weave Extraction
+## Chapter Narrative Weave Extraction — `extractChapterNarrativeWeave`
 
 When writing or reviewing a specific chapter, extract only chapter-relevant content from `narrative-weave.md`:
 
@@ -35,7 +35,7 @@ When writing or reviewing a specific chapter, extract only chapter-relevant cont
 6. Include the subplot table rows relevant to this chapter
 7. Skip all other chapters' entries
 
-## Chapter Art Design Extraction
+## Chapter Art Design Extraction — `extractChapterArtDesign`
 
 When writing or reviewing a specific chapter, extract from `art-design.md`:
 
@@ -59,7 +59,7 @@ To determine which act a chapter belongs to, follow this priority:
 
    Note: This default assumes a 50-chapter novel. For novels with different chapter counts, the blueprint MUST define act ranges explicitly.
 
-## Style Stage Notes Extraction
+## Style Stage Notes Extraction — `extractStyleStageNotes`
 
 Extract stage-specific style rules from `style-guide.md` based on which act the chapter belongs to (use the Chapter-to-Act Mapping procedure above to determine the act).
 
@@ -70,7 +70,7 @@ Extract these sections:
 4. Style evolution trajectory row for the current act
 5. Chapter structure norms
 
-## World Quick Reference
+## World Quick Reference — `buildWorldQuickRef`
 
 Compress world setting for agents that need world context but not full detail:
 
@@ -78,7 +78,7 @@ Compress world setting for agents that need world context but not full detail:
 2. Read `world/rules.md` — extract: power system summary (source, levels, key limitations), combat/magic system basics
 3. Combine into a concise reference (~1000-2000 chars)
 
-## Narrative Weave Summary
+## Narrative Weave Summary — `buildNarrativeWeaveSummary`
 
 For agents that need the full-book narrative weave overview:
 
@@ -87,7 +87,7 @@ For agents that need the full-book narrative weave overview:
 3. Compress prose sections (relationship maps, subplot timelines, technique plans) to headers + first few lines
 4. Target: ~50% of original size
 
-## Art Design Summary
+## Art Design Summary — `buildArtDesignSummary`
 
 For agents that need the full-book art design overview:
 
@@ -98,12 +98,12 @@ For agents that need the full-book art design overview:
 5. For techniques: list techniques used per act
 6. Target: ~50% of original size
 
-## Previous Chapter Summary
+## Previous Chapter Summary — `buildPreviousChapterSummary`
 
 When writing a new chapter, extract writing notes from the previous chapter:
 
 1. Read the previous chapter file
-2. Look for a `## 写作备注` or `## Writing Notes` section
+2. Look for a `### 写作备注` section (H3 heading)
 3. Extract that section in full — it contains: word count, foreshadowing operations, subplot progress, character state updates, next-chapter hooks
 4. If no notes section found, extract the last 300 characters as fallback
 5. Also include the full previous chapter text for continuity

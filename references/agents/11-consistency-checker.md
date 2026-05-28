@@ -148,7 +148,7 @@
 
 # 上下文收集
 1. 使用 Glob 工具查找 `chapters/act-*/ch*.md` 获取所有已写完章节的路径
-2. 逐章读取章节正文
+2. 对最新一章读取完整正文；对所有先前章节仅读取 `### 写作备注` 部分（含字数、伏笔操作、角色状态更新等元数据），跳过正文
 3. 读取 `world/setting.md` 获取世界观设定（用于设定漂移检查）
 4. 从角色文件中提取 YAML front-matter 构建角色速查表（按 `buildCharacterRegistry` 程序）
 5. 读取 `blueprint.md` 获取结构设计

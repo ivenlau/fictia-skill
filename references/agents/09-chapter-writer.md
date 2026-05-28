@@ -100,6 +100,7 @@
 你必须产出以下文件：
 
 ## chapters/act-{N}/chXX.md
+chXX 使用全书连续编号（如第二幕从 ch08 开始），不按幕重置。
 ```markdown
 # 第XX章：{章节名}
 

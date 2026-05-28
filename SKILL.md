@@ -70,34 +70,30 @@ Read the agent prompt file from `references/agents/`:
 ### Step 2: Gather Context
 Read the input files specified in the agent prompt's **上下文收集** section. Use the procedures in `references/context-procedures.md` to compress and extract relevant context.
 
-### Step 3: Inject Style Guide (Stages 3-11)
-For stages 3 and later, read `style-guide.md` and inject its content into the agent prompt before the `# 专业能力` section. This is the **style anchor** — it ensures all downstream agents maintain consistent voice.
+If a required input file is empty (placeholder only) or missing, halt execution of that stage and inform the user which upstream stage produced no output. Do not fabricate content from missing inputs.
 
-To inject: prepend the full content of `style-guide.md` as a new section `## 风格指南` right before `# 专业能力` in the agent prompt context.
-
-### Step 4: Execute Agent Role
+### Step 3: Execute Agent Role
 You now have:
 - The agent prompt (defining role, capabilities, output format, constraints)
 - The gathered context (input files, compressed summaries)
-- The style guide (for stages 3+)
 
 **Act as the agent.** Follow the agent prompt's instructions to generate the output. Write in Chinese. Use the specified output format exactly.
 
-### Step 5: Write Output Files
+### Step 4: Write Output Files
 Use the Write tool to write the output files as specified in the agent prompt's **输出规范** section.
 
-### Step 6: Update Project State
+### Step 5: Update Project State
 Edit `project.yaml` to update the stage status:
 - Set the completed stage to `pending_confirm`
 - If downstream stages were invalidated (via propagation), set them to `needs_update`
 
-### Step 7: Present Summary to User
+### Step 6: Present Summary to User
 Present a structured summary of what was generated:
 - What the output contains (key points, structure)
 - Quality highlights (strengths, notable decisions)
 - Areas for the user to review
 
-### Step 8: Wait for Confirmation
+### Step 7: Wait for Confirmation
 Ask the user to choose:
 - **确认 (confirm)**: Accept the output, mark stage as `confirmed`, proceed to next stage
 - **修改 (refine)**: User provides a directive for targeted changes → apply changes and re-present
@@ -244,16 +240,6 @@ When the user wants to write chapters:
 6. **Auto-execute Stage 10** (editor agent) to review the chapter
 7. **Present both**: the chapter and the review
 8. **Help decide**: Address critical issues from the review, suggest confirm or revise
-
-## Style Anchor Injection
-
-`style-guide.md` is the **global anchor**. For stages 3-11, before executing the agent:
-
-1. Read `style-guide.md` in full
-2. Insert its content into the agent prompt context as a `## 风格指南` section, placed immediately before the agent's `# 专业能力` section
-3. This ensures every agent reads and follows the same style rules
-
-Changes to `style-guide.md` affect all downstream output. Always warn the user about propagation impact.
 
 ## Important Constraints
 

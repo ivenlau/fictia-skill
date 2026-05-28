@@ -120,7 +120,7 @@ Chapter files contain prose followed by a "Writing Notes" section:
 
 ---
 
-## 写作笔记
+### 写作备注
 
 - **字数**: 3200
 - **伏笔操作**: 
