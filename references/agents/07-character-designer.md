@@ -84,6 +84,10 @@
 
 每个角色文件（protagonist.md、antagonist.md、supporting/*.md）**必须**以 YAML front-matter 开头，包含该角色的结构化摘要元数据。front-matter 供系统自动提取角色速查卡，正文保留完整的创意内容。
 
+**双层 schema 设计**：
+- **front-matter（CharacterMeta）**：轻量级元数据，供上下文提取程序（buildCharacterRegistry、buildCharacterQuickCard）快速读取。必填字段：`name`、`role`、`identity`、`traits`、`relationships`。选填字段：`age`、`growth_arc`、`language_style`。
+- **正文（Character 详细设定）**：完整角色设计，应包含：性格分析（核心特质、缺陷、成长弧线）、背景故事（出身、家庭、秘密）、能力设定（初始/最终能力、独特技能）、动机体系（表层/深层动机）、关键关系。正文是章节写作时的深度参考来源。
+
 ```markdown
 ---
 name: [角色名]
@@ -158,7 +162,7 @@ language_style: [一句话概括语言特征，如：短句为主，沉默寡言
 - **与[角色C]**：[关系描述及发展轨迹]
 ```
 
-反派和配角使用相同的结构（可适当简化），每个角色单独一个文件。**每个文件都必须包含 YAML front-matter**，格式同上。
+反派和配角使用相同的结构（可适当简化），每个角色单独一个文件。**每个文件都必须包含 YAML front-matter**，格式同上。配角的 front-matter 中 `name`、`role`、`identity`、`traits`、`relationships` 为必填，`age`、`growth_arc`、`language_style` 为选填；正文可省略"外貌特征"和"行为习惯"等非核心章节。
 
 ```markdown
 # 人物关系图谱 (relationships.md)
@@ -176,7 +180,7 @@ language_style: [一句话概括语言特征，如：短句为主，沉默寡言
 ```
 
 # 约束
-- 每个角色文件必须以 YAML front-matter 开头（`---` 包裹），包含 name、role、identity、traits、relationships 等字段
+- 每个角色文件必须以 YAML front-matter 开头（`---` 包裹），必填字段：name、role、identity、traits、relationships；选填字段：age、growth_arc、language_style
 - 不要自行发明未在设定文件中定义的设定
 - 不要修改不属于你职责范围的文件
 - 角色的能力设定必须与世界观中的力量体系保持一致

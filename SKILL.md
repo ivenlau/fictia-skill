@@ -14,7 +14,7 @@ description: >
 
 Fictia is a standalone AI novel-writing pipeline that orchestrates 11 specialized agents to produce complete Chinese novels. **Claude IS the pipeline** — you directly act as each agent, read agent prompts from `references/agents/`, gather context from project files, generate outputs using your own tools, and manage project state through `project.yaml`.
 
-No CLI, no external dependencies. Your native tools (Read, Write, Edit, Glob, Grep) replace all Fictia tool calls.
+No external dependencies — use your native tools (Read, Write, Edit, Glob, Grep) for all file operations.
 
 ## Quick Start — Detect the Situation
 
@@ -103,36 +103,21 @@ Ask the user to choose:
 - **修改 (refine)**: User provides a directive for targeted changes → apply changes and re-present
 - **重做 (redo)**: User provides a new direction → re-execute the stage with the new directive
 
-## Tool Mapping
-
-| Fictia CLI Tool | Claude Equivalent |
-|----------------|-------------------|
-| `read_project_file(path)` | Read tool (absolute path = project dir + relative path) |
-| `write_project_file(path, content)` | Write tool |
-| `edit_project_file(path, old, new)` | Edit tool |
-| `list_project_files(dir, ext, recursive)` | Glob tool |
-| `count_words(text)` | Strip markdown formatting, count Chinese characters + English words |
-| `get_character(name, "card")` | Read character file's YAML front-matter only |
-| `get_character(name, "full")` | Read full character file |
-| `get_chapter_context(chNum)` | Procedure in `references/context-procedures.md` |
-| `validate_style(text)` | Check text against style-guide dimensions |
-| `scan_consistency(text, foreshadowingIds)` | Grep for foreshadowing IDs and related terms |
-
 ## Stage-by-Stage Reference
 
 | # | Stage | Produces | Dependencies | Incremental |
 |---|-------|----------|-------------|-------------|
 | 1 | 题材分析 | `genre-analysis.md` | None | No |
 | 2 | 架构设计 | `blueprint.md` | genre_analysis | No |
-| 3 | 风格设计 | `style-guide.md` | genre_analysis | No |
+| 3 | 风格设计 | `style-guide.md` | genre_analysis, architecture | No |
 | 4 | 艺术设计 | `art-design.md` | genre_analysis, architecture, style | No |
-| 5 | 叙事编织 | `narrative-weave.md` | genre_analysis, architecture, style | No |
-| 6 | 世界观构建 | `world/setting.md`, `world/rules.md`, `world/timeline.md` | genre_analysis, architecture, style | Yes |
-| 7 | 人物设计 | `characters/protagonist.md`, `characters/antagonist.md`, `characters/supporting/*.md`, `characters/relationships.md` | world, architecture, style, genre_analysis | Yes |
-| 8 | 故事设计 | `outline/act-*.md`, `outline/chapters/ch*.md` | architecture, characters, world, style, art_design, narrative_weave | Yes |
+| 5 | 叙事编织 | `narrative-weave.md` | genre_analysis, architecture, art_design, style | No |
+| 6 | 世界观构建 | `world/setting.md`, `world/rules.md`, `world/timeline.md` | genre_analysis, architecture, art_design, narrative_weave | Yes |
+| 7 | 人物设计 | `characters/protagonist.md`, `characters/antagonist.md`, `characters/supporting/*.md`, `characters/relationships.md` | world, architecture, style, art_design, narrative_weave | Yes |
+| 8 | 故事设计 | `outline/act-*.md`, `outline/chapters/ch*.md` | architecture, art_design, narrative_weave, world, characters | Yes |
 | 9 | 章节写作 | `chapters/act-N/chXX.md` | story, style, characters, world, narrative_weave, art_design | Yes (per chapter) |
-| 10 | 编辑审核 | `reviews/chXX-review.md` | chapters, style, characters, world, outline, narrative_weave | Yes (per chapter) |
-| 11 | 一致性校验 | `reviews/consistency-report.md` | All chapters, characters, world, blueprint, outline, narrative_weave, style | Yes |
+| 10 | 编辑审核 | `reviews/chXX-review.md` | chapters, style | Yes (per chapter) |
+| 11 | 一致性校验 | `reviews/consistency-report.md` | chapters | Yes |
 
 ## Propagation Rules
 
@@ -141,10 +126,10 @@ When a stage's output is modified, downstream stages may be invalidated. Check b
 | Modified Stage | Invalidates |
 |---------------|-------------|
 | genre_analysis | architecture, style, art_design, narrative_weave, world, characters, story, chapters |
-| architecture | art_design, narrative_weave, world, characters, story, chapters |
-| style | art_design, chapters, editor |
-| art_design | story, chapters |
-| narrative_weave | story, chapters |
+| architecture | narrative_weave, story, chapters |
+| style | chapters, editor |
+| art_design | narrative_weave, characters, story, chapters |
+| narrative_weave | characters, story, chapters |
 | world | characters, story, chapters |
 | characters | story, chapters |
 | story | chapters |

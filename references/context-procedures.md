@@ -45,11 +45,23 @@ When writing or reviewing a specific chapter, extract from `art-design.md`:
 4. Find the per-chapter narrative technique application table — filter for current chapter
 5. Skip other chapters' entries
 
+## Chapter-to-Act Mapping
+
+To determine which act a chapter belongs to, follow this priority:
+
+1. **Blueprint priority**: Read `blueprint.md` and look for act definitions with chapter ranges (e.g., `name: "第一幕"\nchapters: [4, 15]`). Parse each act's chapter range and match the target chapter number.
+2. **Default fallback** (if blueprint has no parseable act ranges):
+   - Act 0 (序篇): ch1-3
+   - Act 1 (第一幕): ch4-15
+   - Act 2 (第二幕): ch16-30
+   - Act 3 (第三幕): ch31-45
+   - Act 4 (终篇): ch46-50
+
+   Note: This default assumes a 50-chapter novel. For novels with different chapter counts, the blueprint MUST define act ranges explicitly.
+
 ## Style Stage Notes Extraction
 
-Extract stage-specific style rules from `style-guide.md` based on which act the chapter belongs to:
-
-- Act mapping: Prologue (ch1-3), Act 1 (ch4-15), Act 2 (ch16-30), Act 3 (ch31-45), Epilogue (ch46-50)
+Extract stage-specific style rules from `style-guide.md` based on which act the chapter belongs to (use the Chapter-to-Act Mapping procedure above to determine the act).
 
 Extract these sections:
 1. Overall tone and writing style rules
@@ -81,7 +93,7 @@ For agents that need the full-book art design overview:
 
 1. Read `art-design.md` in full
 2. Keep imagery definitions and prose overviews in full
-3. Compress per-chapter tables (emotional beats, narrative technique application) to per-act summaries
+3. Compress per-chapter tables (emotional beats, narrative technique application) to per-act summaries (use Chapter-to-Act Mapping procedure to determine act boundaries)
 4. For emotional beats: aggregate by act (average intensity, dominant emotions)
 5. For techniques: list techniques used per act
 6. Target: ~50% of original size
