@@ -15,8 +15,8 @@ Fictia orchestrates 11 stages in strict dependency order. Each stage has a dedic
 | 7 | `characters` | 人物设计 | world, architecture, style, art_design, narrative_weave | Yes | — |
 | 8 | `story` | 故事设计 | architecture, art_design, narrative_weave, world, characters | Yes | — |
 | 9 | `chapters` | 章节写作 | style, art_design, narrative_weave, world, characters, story | Yes | — |
-| 10 | `editor` | 编辑审核 | chapters, style | Yes | Yes |
-| 11 | `consistency` | 一致性校验 | chapters | Yes | — |
+| 10 | `editor` | 编辑审核 | chapters, style | Yes | Yes (forced per chapter, must pass) |
+| 11 | `consistency` | 一致性校验 | chapters | Yes | Yes (forced every 5 chapters, must pass) |
 
 ## Dependency Diagram
 
@@ -72,7 +72,7 @@ Stages marked "Yes" for incremental support can process one item at a time:
 - `characters`: Can design characters one at a time
 - `story`: Can outline acts/chapters incrementally
 - `chapters`: Writes one chapter at a time (primary use case)
-- `editor`: Reviews one chapter at a time (auto-triggers after each chapter)
-- `consistency`: Can check incrementally
+- `editor`: Reviews one chapter at a time. **Forced**: must run after every chapter, and the review-fix loop must pass (zero 严重/一般 issues, score = A) before the chapter is confirmed. Up to 3 iterations.
+- `consistency`: Checks across all chapters. **Forced**: must run every 5 confirmed chapters (ch05, ch10, ch15...). The consistency-fix loop must pass (zero 严重/一般 issues, score = A) before new chapters may be written. Up to 2 iterations.
 
 For incremental stages, after each item is processed, the agent checks `hasMoreWork()`. If more items remain, the stage stays `in_progress` and processes the next item.

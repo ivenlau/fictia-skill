@@ -40,7 +40,7 @@ project-root/
     ├── ch01-review.md              #   Chapter 1 editor review
     ├── ch02-review.md
     ├── ...
-    └── consistency-report.md       #   Global consistency report
+    └── consistency-report.md       #   Milestone consistency report (overwritten each check)
 ```
 
 ## Series Project Directory Tree
@@ -87,6 +87,11 @@ chapters:                          # Chapter progress (auto-computed)
   total: 30                        # Total chapters (from outline/chapters/*.md count)
   written: 5                       # Written chapters (from chapters/act-*/*.md count)
   confirmed: 3                     # Confirmed chapters
+
+consistency:                       # Milestone consistency check tracking
+  last_check_chapter: 5            # Last chapter number up to which consistency was verified
+  last_check_date: "2026-06-04"    # Date of last check
+  status: "confirmed"              # not_started | in_progress | confirmed | needs_update
 ```
 
 ## Character File Format

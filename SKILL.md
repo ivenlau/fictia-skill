@@ -224,6 +224,10 @@ When the user wants to create a new Fictia project:
      total: 0
      written: 0
      confirmed: 0
+   consistency:
+     last_check_chapter: 0
+     last_check_date: null
+     status: not_started
    ```
 
 4. **Create placeholder files**: Write empty placeholder markdown files with titles for each expected output file.
@@ -247,18 +251,67 @@ When the user wants to export the novel as a single file:
 6. **Write** the assembled content to `{项目名}.md` or `{项目名}.txt` in the project root directory.
 7. **Report**: tell the user the output path and total chapter count.
 
-## Chapter Writing Sessions
+## Chapter Writing Sessions (Enforced Review-Fix Loop)
 
-When the user wants to write chapters:
+Every chapter MUST pass through the full write → review → fix → confirm cycle before moving on. No chapter is considered complete until the review shows **zero 严重问题, zero 一般问题, and 综合评分 = A**.
+
+### Phase 1: Write
 
 1. **Check progress**: Read `project.yaml` → `chapters` field, or use Glob to count files in `outline/chapters/` vs `chapters/act-*/`
 2. **Read the next chapter outline**: `outline/chapters/chXX.md`
 3. **Summarize what the chapter should contain**: scenes, characters, events, weave_notes obligations
 4. **Check weave_notes**: What foreshadowing needs to be planted/advanced? What subplots need movement?
 5. **Execute Stage 9** (chapter writer agent) for this chapter
-6. **Auto-execute Stage 10** (editor agent) to review the chapter
-7. **Present both**: the chapter and the review
-8. **Help decide**: Address critical issues from the review, suggest confirm or revise
+
+### Phase 2: Review-Fix Loop (mandatory, up to 3 iterations)
+
+After every chapter is written, an automatic review-fix cycle runs. **This loop is not optional.**
+
+**Fix triggers** (any one of these triggers a fix round):
+- 严重问题（必须修改） table has ≥1 rows
+- 一般问题（建议修改） table has ≥1 rows
+- 综合评分 is B, C, or D
+
+**Pass condition** (all three must be true):
+- Zero 严重问题
+- Zero 一般问题
+- 综合评分 = A
+
+**Loop procedure**:
+1. **Auto-execute Stage 10** (editor agent) → produce `reviews/chXX-review.md`
+2. **Evaluate**: Check if pass condition is met
+3. **If NOT passed**:
+   a. Apply targeted fixes to `chapters/act-{N}/chXX.md` based on each specific issue (严重 + 一般) in the review
+   b. Re-execute Stage 10 → overwrite `reviews/chXX-review.md`
+   c. Increment iteration counter
+   d. If still not passed after iteration 1 or 2 → repeat from step 2
+   e. If still not passed after **3 iterations** → **halt loop**, present all iterations' findings to the user for manual decision
+4. **If passed** → proceed to Phase 3
+5. **Log the loop**: At the end of the review file, always append a fix-log section:
+   ```markdown
+   ### 审核修复日志
+   | 迭代 | 严重问题 | 一般问题 | 评分 | 主要修复内容 |
+   |------|---------|---------|------|------------|
+   | 1 | [N] | [N] | [A-D] | [摘要] |
+   | 2 | [N] | [N] | [A-D] | [摘要] |
+   ```
+
+### Phase 3: Confirm
+
+Once the pass condition is met:
+
+1. **Show the user**: Present the final chapter text (or summary) and the final review report with fix-log
+2. **Auto-confirm or user-confirm**: Both are acceptable. If the user is present, briefly summarize the result and confirm. If the user has indicated batch/auto mode, auto-confirm without waiting.
+3. **Update state**: `project.yaml` → increment `chapters.written` and `chapters.confirmed`
+4. **Check milestone**: Is `chapters.confirmed` a multiple of 5? → If yes, trigger Phase 4 before writing the next chapter
+
+### Phase 4: Milestone Consistency Check (every 5 chapters)
+
+After a chapter is confirmed, check if `chapters.confirmed` is a multiple of 5 (chapters 5, 10, 15, 20, 25...).
+
+**If milestone reached → automatically trigger Milestone Consistency Check** (see dedicated section below). Do not proceed to the next chapter until the consistency check passes.
+
+**If not a milestone → proceed to write the next chapter.**
 
 ## Workflow: Content Modification (自由修改)
 
@@ -347,8 +400,8 @@ When the user wants to write chapters:
 **整章重写**（修改涉及章节核心情节或大部分内容）：
 1. 读取更新后的该章大纲 (outline/chapters/chXX.md)
 2. 执行 Stage 9（章节写作）重写该章
-3. 自动执行 Stage 10（编辑审核）审核重写后的章节
-4. 展示章节和审核结果
+3. **进入 Phase 2 Review-Fix Loop**（与正常章节写作流程相同：编辑审核 → 修复 → 再审核，直到通过）
+4. 通过后展示章节和最终审核结果
 
 ### 快速通道
 
@@ -358,6 +411,53 @@ When the user wants to write chapters:
 - **格式修复**：修复文件格式问题
 
 即使在快速通道中，也需确认修改不与任何设计文档矛盾。如有疑问，仍应先检查上游设计。
+
+## Milestone Consistency Check (every 5 chapters)
+
+When `chapters.confirmed` reaches a multiple of 5 (5, 10, 15, 20...), a cross-chapter consistency validation is **automatically triggered**. This is mandatory — no new chapters may be written until the consistency check passes.
+
+### Step 1: Run Consistency Check
+
+Execute Stage 11 (consistency checker agent) → produce `reviews/consistency-report.md`
+
+### Step 2: Evaluate Report
+
+**Fix triggers** (any one triggers a fix round):
+- 严重问题（影响故事逻辑） table has ≥1 rows
+- 一般问题（不影响主要逻辑但需要修正） table has ≥1 rows
+
+**Pass condition**:
+- Zero 严重问题
+- Zero 一般问题
+- 一致性评分 = A
+
+### Step 3: Fix Loop (up to 2 iterations)
+
+If NOT passed:
+
+1. **Fix affected chapters**: Apply targeted fixes to every chapter with issues listed in the report
+2. **Re-run editor**: Execute Stage 10 on each modified chapter → update their `reviews/chXX-review.md`
+3. **Re-run consistency check**: Execute Stage 11 → overwrite `reviews/consistency-report.md`
+4. If still not passed → repeat once more (max **2 iterations** total)
+5. If issues persist after 2 iterations → **halt**, present full findings to user for manual decision
+
+If passed → proceed to Step 4.
+
+### Step 4: Confirm & Update
+
+1. **Show the user**: Present the consistency report (summary is fine for long reports)
+2. **Auto-confirm or user-confirm**: Both acceptable
+3. **Update `project.yaml`**:
+   ```yaml
+   consistency:
+     last_check_chapter: {N}    # the chapter number up to which consistency was verified
+     last_check_date: "{date}"
+     status: confirmed
+   ```
+
+### Step 5: Proceed
+
+Resume chapter writing from the next chapter after the milestone.
 
 ## Important Constraints
 
