@@ -126,10 +126,11 @@ When acting as the chapter-writer, assemble context in this order:
 When acting as the editor, assemble:
 
 1. Chapter text (full)
-2. Art design summary (compress using Art Design Summary procedure)
-3. Narrative weave summary (compress using Narrative Weave Summary procedure)
-4. World quick reference (compress using World Quick Ref procedure)
-5. Character registry (build using Character Registry procedure)
+2. Chapter outline (from `outline/chapters/chXX.md`) — **extract the 目标字数 field** for word-count verification
+3. Art design summary (compress using Art Design Summary procedure)
+4. Narrative weave summary (compress using Narrative Weave Summary procedure)
+5. World quick reference (compress using World Quick Ref procedure)
+6. Character registry (build using Character Registry procedure)
 
 ## Context Assembly for Consistency Check
 
