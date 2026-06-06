@@ -1,62 +1,54 @@
 ---
 name: fictia
 description: >
-  Guide users through the Fictia AI novel-writing pipeline — an 11-stage workflow
-  for creating complete Chinese novels with specialized AI agents. Use this skill when
-  the user mentions Fictia, wants to write a novel using AI agents, asks about the novel
-  creation pipeline, wants to continue writing a novel project, needs help with genre
-  analysis / character design / chapter writing / consistency checking for a novel.
-  Also trigger when the user asks about creating stories with structured AI-assisted
-  workflows, mentions "小说创作", "写作流水线", or asks about multi-agent novel writing systems.
+  Fictia AI 小说创作流水线——11 阶段、11 专用 agent 的中文长篇小说生成流程。
+  触发条件：用户提及 Fictia、AI 小说创作、流水线写作、小说创作、写作流水线、
+  多 agent 小说系统，或需要进行题材分析、人物设计、章节写作、一致性校验等小说创作任务。
 ---
 
-# Fictia — Standalone AI Novel Writing Pipeline
+# Fictia — AI 小说创作流水线
 
-Fictia is a standalone AI novel-writing pipeline that orchestrates 11 specialized agents to produce complete Chinese novels. **Claude IS the pipeline** — you directly act as each agent, read agent prompts from `references/agents/`, gather context from project files, generate outputs using your own tools, and manage project state through `project.yaml`.
+Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取 agent prompt，
+从项目文件收集上下文，生成产出，通过 `project.yaml` 管理状态。
+全程使用原生工具（Read、Write、Edit、Glob、Grep），无外部依赖。
 
-No external dependencies — use your native tools (Read, Write, Edit, Glob, Grep) for all file operations.
+## 启动判定
 
-## Quick Start — Detect the Situation
+用户调用本 skill 时：
 
-When the user invokes this skill:
+1. **定位项目**：从当前目录向上查找 `project.yaml`。
+2. **分支到对应工作流**：
+   - 未找到项目 → **新建项目**工作流
+   - 项目存在，阶段未开始 → **启动流水线**工作流
+   - 项目存在，部分阶段已确认 → **继续流水线**工作流
+   - 用户要求导出 → **导出**工作流
+   - 用户要求修改已有内容 → **内容修改**工作流
+   - 一般性问题 → 直接回答
 
-1. **Find the project**: Look for `project.yaml` in the current directory or walk up parent directories.
+## 工作流：新建项目
 
-2. **Branch into the appropriate workflow**:
-   - No project found → **New Project** workflow
-   - Project found, stages not started → **Start Pipeline** workflow
-   - Project found, some stages confirmed → **Continue Pipeline** workflow
-   - User asks to export → **Export** workflow
-   - User requests content modification (changing plot, characters, foreshadowing, etc.) → **Content Modification** workflow
-   - User has a general question (not about changing novel content) → handle directly
+1. 与用户讨论题材、目标字数、卷数、核心设定。
+2. 创建项目（见"新建项目创建"小节）。
+3. 进入流水线执行。
 
-## Workflow: New Project
+## 工作流：继续流水线
 
-When the user wants to start a new novel:
+1. 读取 `project.yaml` 评估当前状态。
+2. 按依赖规则找到下一个可执行阶段：
+   - 状态为 `not_started` 或 `needs_update`
+   - 所有依赖阶段已 `confirmed`
+   - 流水线顺序中第一个满足条件的阶段
+3. 说明该阶段的目标和产出。
+4. 执行该阶段（见"流水线执行协议"）。
 
-1. **Discuss the concept** with the user: genre, target word count, volume count, core premise. Help them think through these decisions.
-2. **Create the project** (see New Project Creation section below).
-3. **Guide through the pipeline** (see Pipeline Execution Protocol below).
+## 流水线执行协议
 
-## Workflow: Continue Pipeline
+### 步骤 1：读取 Agent Prompt
 
-1. **Read `project.yaml`** to assess current state.
-2. **Identify the next actionable stage** based on dependency rules:
-   - Find stages with `not_started` or `needs_update` status
-   - Check that all their dependencies are `confirmed`
-   - The first such stage in pipeline order is the next step
-3. **Explain what that stage does** and what it will produce.
-4. **Execute the stage** (see Pipeline Execution Protocol below).
+从 `references/agents/` 读取对应阶段的 prompt 文件：
 
-## Pipeline Execution Protocol
-
-For each stage, follow this protocol:
-
-### Step 1: Read Agent Prompt
-Read the agent prompt file from `references/agents/`:
-
-| Stage | Agent Prompt File |
-|-------|------------------|
+| 阶段 | Prompt 文件 |
+|------|------------|
 | 1. 题材分析 | `references/agents/01-genre-analyst.md` |
 | 2. 架构设计 | `references/agents/02-architect.md` |
 | 3. 风格设计 | `references/agents/03-style-designer.md` |
@@ -69,60 +61,61 @@ Read the agent prompt file from `references/agents/`:
 | 10. 编辑审核 | `references/agents/10-editor.md` |
 | 11. 一致性校验 | `references/agents/11-consistency-checker.md` |
 
-### Step 2: Gather Context
-Read the input files specified in the agent prompt's **上下文收集** section. Use the procedures in `references/context-procedures.md` to compress and extract relevant context.
+### 步骤 2：收集上下文
 
-If a required input file is empty (placeholder only) or missing, halt execution of that stage and inform the user which upstream stage produced no output. Do not fabricate content from missing inputs.
+读取 agent prompt 中"上下文收集"部分指定的输入文件。使用 `references/context-procedures.md` 中的流程压缩和提取上下文。
 
-### Step 3: Execute Agent Role
-You now have:
-- The agent prompt (defining role, capabilities, output format, constraints)
-- The gathered context (input files, compressed summaries)
+若必需的输入文件为空或缺失，中止该阶段并通知用户哪个上游阶段未产出。
 
-**Act as the agent.** Follow the agent prompt's instructions to generate the output. Write in Chinese. Use the specified output format exactly.
+### 步骤 3：执行 Agent 角色
 
-### Step 4: Write Output Files
-Use the Write tool to write the output files as specified in the agent prompt's **输出规范** section.
+已具备：agent prompt（角色、能力、输出格式、约束）+ 收集的上下文。
 
-### Step 5: Update Project State
-Edit `project.yaml` to update the stage status:
-- Set the completed stage to `pending_confirm`
-- If downstream stages were invalidated (via propagation), set them to `needs_update`
+**扮演该 agent**，按 prompt 指令生成产出。使用中文。严格遵循输出格式。
 
-### Step 6: Present Summary to User
-Present a structured summary of what was generated:
-- What the output contains (key points, structure)
-- Quality highlights (strengths, notable decisions)
-- Areas for the user to review
+### 步骤 4：写入产出文件
 
-### Step 7: Wait for Confirmation
-Ask the user to choose:
-- **确认 (confirm)**: Accept the output, mark stage as `confirmed`, proceed to next stage
-- **修改 (refine)**: User provides a directive for targeted changes → apply changes and re-present
-- **重做 (redo)**: User provides a new direction → re-execute the stage with the new directive
+使用 Write 工具写入 agent prompt 中"输出规范"部分指定的文件。
 
-## Stage-by-Stage Reference
+### 步骤 5：更新项目状态
 
-| # | Stage | Produces | Dependencies | Incremental |
-|---|-------|----------|-------------|-------------|
-| 1 | 题材分析 | `genre-analysis.md` | None | No |
-| 2 | 架构设计 | `blueprint.md` | genre_analysis | No |
-| 3 | 风格设计 | `style-guide.md` | genre_analysis, architecture | No |
-| 4 | 艺术设计 | `art-design.md` | genre_analysis, architecture, style | No |
-| 5 | 叙事编织 | `narrative-weave.md` | genre_analysis, architecture, art_design, style | No |
-| 6 | 世界观构建 | `world/setting.md`, `world/rules.md`, `world/timeline.md` | genre_analysis, architecture, art_design, narrative_weave | Yes |
-| 7 | 人物设计 | `characters/protagonist.md`, `characters/antagonist.md`, `characters/supporting/*.md`, `characters/relationships.md` | world, architecture, style, art_design, narrative_weave | Yes |
-| 8 | 故事设计 | `outline/act-*.md`, `outline/chapters/ch*.md` | architecture, art_design, narrative_weave, world, characters | Yes |
-| 9 | 章节写作 | `chapters/act-N/chXX.md` | story, style, characters, world, narrative_weave, art_design | Yes (per chapter) |
-| 10 | 编辑审核 | `reviews/chXX-review.md` | chapters, style | Yes (per chapter) |
-| 11 | 一致性校验 | `reviews/consistency-report.md` | chapters | Yes |
+编辑 `project.yaml`：
+- 已完成阶段设为 `pending_confirm`
+- 若下游阶段被波及，设为 `needs_update`
 
-## Propagation Rules
+### 步骤 6：向用户展示摘要
 
-When a stage's output is modified, downstream stages may be invalidated. Check before suggesting edits:
+展示产出内容要点、关键决策、需要用户审核的部分。
 
-| Modified Stage | Invalidates |
-|---------------|-------------|
+### 步骤 7：等待确认
+
+用户选择：
+- **确认**：标记为 `confirmed`，进入下一阶段
+- **修改**：用户提供修改指令 → 定向修改后重新展示
+- **重做**：用户提供新方向 → 重新执行该阶段
+
+## 阶段速查
+
+| # | 阶段 | 产出文件 | 依赖 | 增量 |
+|---|------|---------|------|------|
+| 1 | 题材分析 | `genre-analysis.md` | 无 | 否 |
+| 2 | 架构设计 | `blueprint.md` | genre_analysis | 否 |
+| 3 | 风格设计 | `style-guide.md` | genre_analysis, architecture | 否 |
+| 4 | 艺术设计 | `art-design.md` | genre_analysis, architecture, style | 否 |
+| 5 | 叙事编织 | `narrative-weave.md` | genre_analysis, architecture, art_design, style | 否 |
+| 6 | 世界观构建 | `world/setting.md`, `world/rules.md`, `world/timeline.md` | genre_analysis, architecture, art_design, narrative_weave | 是 |
+| 7 | 人物设计 | `characters/protagonist.md`, `characters/antagonist.md`, `characters/supporting/*.md`, `characters/relationships.md` | world, architecture, style, art_design, narrative_weave | 是 |
+| 8 | 故事设计 | `outline/act-*.md`, `outline/chapters/ch*.md` | architecture, art_design, narrative_weave, world, characters | 是 |
+| 9 | 章节写作 | `chapters/act-N/chXX.md` | story, style, characters, world, narrative_weave, art_design | 是（逐章） |
+| 10 | 编辑审核 | `reviews/chXX-review.md` | chapters, style | 是（逐章） |
+| 11 | 一致性校验 | `reviews/consistency-report.md` | chapters | 是 |
+
+## 传播规则
+
+修改某阶段产出时，下游阶段可能失效。修改前必须警告用户：
+
+| 修改阶段 | 失效下游 |
+|---------|---------|
 | genre_analysis | architecture, style, art_design, narrative_weave, world, characters, story, chapters |
 | architecture | narrative_weave, story, chapters |
 | style | chapters, editor |
@@ -133,42 +126,42 @@ When a stage's output is modified, downstream stages may be invalidated. Check b
 | story | chapters |
 | chapters | consistency |
 
-Always warn the user: "修改[X]会导致以下阶段需要重新运行：[list]。确定要继续吗？"
+修改前提示："修改[X]会导致以下阶段需要重新运行：[list]。确定要继续吗？"
 
-## Refinement Workflow
+## 修改工作流
 
-### Small Changes (refine)
-When the user provides a specific directive for targeted changes:
-1. Read the current output file
-2. Apply the changes using Edit tool
-3. Re-present the summary
+### 小修改（refine）
 
-### Major Changes (redo)
-When the user wants a substantially different direction:
-1. Re-execute the stage with the new directive incorporated into the context
-2. Overwrite the output file(s)
-3. Re-present the summary
+用户提供定向修改指令：
+1. 读取当前产出文件
+2. 使用 Edit 工具应用修改
+3. 重新展示摘要
 
-### Directive Tips
-Help the user craft clear, specific directives:
-- **Bad**: "写得更好" (too vague)
-- **Good**: "第二章的战斗场景节奏太慢，使用更多短句加速，增加紧迫感"
-- **Good**: "主角的性格应该更果断，减少犹豫不决的描写"
+### 大修改（redo）
 
-## New Project Creation
+用户提供全新方向：
+1. 将新方向纳入上下文，重新执行该阶段
+2. 覆写产出文件
+3. 重新展示摘要
 
-When the user wants to create a new Fictia project:
+### 修改指令建议
 
-1. **Gather requirements**:
-   - Project name (English, used as directory name)
-   - Author name
-   - Genre and sub-genre
-   - Target word count (default: 300,000)
-   - Target volume count (default: 1)
-   - Chapter target words (default: 3,000)
-   - Core premise (one paragraph)
+- **差**："写得更好"（太模糊）
+- **好**："第二章的战斗场景节奏太慢，使用更多短句加速，增加紧迫感"
+- **好**："主角的性格应该更果断，减少犹豫不决的描写"
 
-2. **Create directory structure**:
+## 新建项目创建
+
+1. **收集需求**：
+   - 项目名（英文，用作目录名）
+   - 作者名
+   - 题材与子题材
+   - 目标字数（默认 300,000）
+   - 目标卷数（默认 1）
+   - 每章目标字数：由 `target_words / 预估章节数` 自动计算，不硬编码默认值。若用户明确指定则用用户值。预估章节数可根据题材和卷数推断（如玄幻长篇每卷 20-30 章，短篇每卷 8-12 章）
+   - 核心设定（一段话）
+
+2. **创建目录结构**：
    ```
    <project-name>/
    ├── project.yaml
@@ -198,7 +191,7 @@ When the user wants to create a new Fictia project:
    └── reviews/
    ```
 
-3. **Create `project.yaml`**:
+3. **创建 `project.yaml`**：
    ```yaml
    name: <project-name>
    author: <author>
@@ -206,7 +199,7 @@ When the user wants to create a new Fictia project:
    sub_genre: <sub-genre>
    target_words: <number>
    target_volumes: <number>
-   chapter_target_words: <number>
+   chapter_target_words: <number>        # 由 target_words / 预估章节数 计算，或用户指定
    premise: <one paragraph>
    pipeline:
      genre_analysis: not_started
@@ -230,64 +223,59 @@ When the user wants to create a new Fictia project:
      status: not_started
    ```
 
-4. **Create placeholder files**: Write empty placeholder markdown files with titles for each expected output file.
+4. **创建占位文件**：为每个产出文件写入带标题的空 markdown 文件。
 
-5. **Begin Stage 1**: Start the pipeline with genre analysis.
+5. **启动阶段 1**：开始题材分析。
 
-## Workflow: Export
+## 工作流：导出
 
-When the user wants to export the novel as a single file:
+1. 读取 `project.yaml` 获取项目名和作者。
+2. 确认格式（默认 `md`）：`txt`（纯文本）或 `md`（markdown）。
+3. 使用 Glob `chapters/act-*/ch*.md` 收集章节，按文件名排序。
+4. **逐章处理**：读取内容，移除 `### 写作备注` 及其前的 `---` 分隔符，保留正文。
+5. **拼装**：
+   - md：标题行 + 可选作者行 + `---` + 各章用 `---` 分隔
+   - txt：标题行 + `=` 下划线 + 各章直接拼接，去除 markdown 格式符
+6. 写入项目根目录的 `{项目名}.md` 或 `{项目名}.txt`。
+7. 报告输出路径和章节数。
 
-1. **Read `project.yaml`** to get the project name and author.
-2. **Ask format** (if not specified): `txt` (plain text) or `md` (markdown). Default: `md`.
-3. **Collect chapters**: Use Glob `chapters/act-*/ch*.md`, sort by filename (ch01, ch02, ...).
-4. **For each chapter file**:
-   - Read the file content
-   - Strip the `### 写作备注` section and everything after it (including the `---` separator before it)
-   - The result is the clean chapter prose only
-5. **Assemble output**:
-   - **md format**: Add a header `# {项目名}`, optional `> 作者: {作者}`, then `---`, then concatenate all cleaned chapters separated by `---`
-   - **txt format**: Add a header `{项目名}` with `=` underline, then concatenate all cleaned chapters. Strip markdown formatting (`#`, `**`, `*`) from the text
-6. **Write** the assembled content to `{项目名}.md` or `{项目名}.txt` in the project root directory.
-7. **Report**: tell the user the output path and total chapter count.
+## 章节写作流程（强制审核-修复循环）
 
-## Chapter Writing Sessions (Enforced Review-Fix Loop)
+每章必须通过 写作 → 审核 → 修复 → 确认 完整循环。通过条件：**零严重问题、零一般问题、综合评分 = A**。
 
-Every chapter MUST pass through the full write → review → fix → confirm cycle before moving on. No chapter is considered complete until the review shows **zero 严重问题, zero 一般问题, and 综合评分 = A**.
+### 阶段 1：写作
 
-### Phase 1: Write
+1. 读取 `project.yaml` → `chapters` 字段，或用 Glob 统计 `outline/chapters/` 与 `chapters/act-*/` 的文件数。
+2. 读取下一章大纲：`outline/chapters/chXX.md`
+3. 概述本章内容：场景、角色、事件、weave_notes 要求。
+4. 检查 weave_notes：需要埋设/推进的伏笔、需要推进的支线。
+5. 执行阶段 9（章节写手 agent）。
 
-1. **Check progress**: Read `project.yaml` → `chapters` field, or use Glob to count files in `outline/chapters/` vs `chapters/act-*/`
-2. **Read the next chapter outline**: `outline/chapters/chXX.md`
-3. **Summarize what the chapter should contain**: scenes, characters, events, weave_notes obligations
-4. **Check weave_notes**: What foreshadowing needs to be planted/advanced? What subplots need movement?
-5. **Execute Stage 9** (chapter writer agent) for this chapter
+### 阶段 2：审核-修复循环（强制，最多 3 轮）
 
-### Phase 2: Review-Fix Loop (mandatory, up to 3 iterations)
+每章写完后自动触发审核-修复循环。
 
-After every chapter is written, an automatic review-fix cycle runs. **This loop is not optional.**
+**修复触发**（满足任一即触发）：
+- 严重问题（必须修改）表 ≥1 行
+- 一般问题（建议修改）表 ≥1 行
+- 综合评分为 B/C/D
 
-**Fix triggers** (any one of these triggers a fix round):
-- 严重问题（必须修改） table has ≥1 rows
-- 一般问题（建议修改） table has ≥1 rows
-- 综合评分 is B, C, or D
-
-**Pass condition** (all three must be true):
-- Zero 严重问题
-- Zero 一般问题
+**通过条件**（全部满足）：
+- 零严重问题
+- 零一般问题
 - 综合评分 = A
 
-**Loop procedure**:
-1. **Auto-execute Stage 10** (editor agent) → produce `reviews/chXX-review.md`
-2. **Evaluate**: Check if pass condition is met
-3. **If NOT passed**:
-   a. Apply targeted fixes to `chapters/act-{N}/chXX.md` based on each specific issue (严重 + 一般) in the review
-   b. Re-execute Stage 10 → overwrite `reviews/chXX-review.md`
-   c. Increment iteration counter
-   d. If still not passed after iteration 1 or 2 → repeat from step 2
-   e. If still not passed after **3 iterations** → **halt loop**, present all iterations' findings to the user for manual decision
-4. **If passed** → proceed to Phase 3
-5. **Log the loop**: At the end of the review file, always append a fix-log section:
+**循环流程**：
+1. 执行阶段 10（编辑 agent）→ 产出 `reviews/chXX-review.md`
+2. 评估是否通过
+3. **未通过**：
+   a. 按审核中的每个具体问题（严重 + 一般）定向修复 `chapters/act-{N}/chXX.md`
+   b. 重新执行阶段 10 → 覆写 `reviews/chXX-review.md`
+   c. 递增迭代计数器
+   d. 第 1 或 2 轮仍未通过 → 回到步骤 2
+   e. **3 轮后仍未通过** → 中止循环，展示所有轮次结果供用户决定
+4. **通过** → 进入阶段 3
+5. 在审核报告末尾追加修复日志：
    ```markdown
    ### 审核修复日志
    | 迭代 | 严重问题 | 一般问题 | 评分 | 主要修复内容 |
@@ -296,32 +284,31 @@ After every chapter is written, an automatic review-fix cycle runs. **This loop 
    | 2 | [N] | [N] | [A-D] | [摘要] |
    ```
 
-### Phase 3: Confirm
+### 阶段 3：确认
 
-Once the pass condition is met:
+通过后：
+1. 向用户展示最终章节文本（或摘要）和审核报告（含修复日志）
+2. 确认方式：用户在场则简述结果并确认；用户已指示批量/自动模式则自动确认
+3. 更新 `project.yaml`：递增 `chapters.written` 和 `chapters.confirmed`
+4. 检查里程碑：`chapters.confirmed` 是否为 5 的倍数 → 是则触发阶段 4
 
-1. **Show the user**: Present the final chapter text (or summary) and the final review report with fix-log
-2. **Auto-confirm or user-confirm**: Both are acceptable. If the user is present, briefly summarize the result and confirm. If the user has indicated batch/auto mode, auto-confirm without waiting.
-3. **Update state**: `project.yaml` → increment `chapters.written` and `chapters.confirmed`
-4. **Check milestone**: Is `chapters.confirmed` a multiple of 5? → If yes, trigger Phase 4 before writing the next chapter
+### 阶段 4：里程碑一致性校验（每 5 章）
 
-### Phase 4: Milestone Consistency Check (every 5 chapters)
+章节确认后，检查 `chapters.confirmed` 是否为 5 的倍数（5、10、15、20...）。
 
-After a chapter is confirmed, check if `chapters.confirmed` is a multiple of 5 (chapters 5, 10, 15, 20, 25...).
+**到达里程碑 → 自动触发一致性校验**（见下方专节）。校验通过前不得写作新章节。
 
-**If milestone reached → automatically trigger Milestone Consistency Check** (see dedicated section below). Do not proceed to the next chapter until the consistency check passes.
+**未到里程碑 → 继续写下一章。**
 
-**If not a milestone → proceed to write the next chapter.**
+## 工作流：内容修改（自由修改）
 
-## Workflow: Content Modification (自由修改)
+用户在已有项目中提出对小说内容的修改意见时（如"让反派提前出场"、"把第三章的战斗写得更激烈"），遵循本工作流。
 
-当用户在已有项目中进行自由对话，提出对小说内容的修改意见时（例如："让反派提前出场"、"把第三章的战斗写得更激烈"、"给主角加一条身世伏笔"），遵循本工作流。
+**核心原则：先更新设计，再改写章节。**
 
-**核心原则：先更新设计，再改写章节。** 确保所有上游设计文档与修改意图一致后，才进行章节重写或局部改写。
+### 步骤 1：分析修改请求
 
-### Step 1: 分析修改请求
-
-理解用户的修改意图，判断修改的性质和范围。将修改归类为以下类型之一或组合：
+理解修改意图，归类为以下类型（可组合）：
 
 | 修改类型 | 说明 | 示例 |
 |---------|------|------|
@@ -331,14 +318,12 @@ After a chapter is confirmed, check if `chapters.confirmed` is a multiple of 5 (
 | 情节变更 | 影响某章或数章的事件、场景、冲突 | "第五章增加一场追逐戏"、"删掉第三章的支线" |
 | 世界观变更 | 影响设定、规则、时间线 | "修改力量体系等级"、"增加一个新种族" |
 | 风格调整 | 影响语言风格、叙事手法 | "对话写得更口语化"、"战斗用短句加速" |
-| 局部文字修改 | 仅影响具体措辞和描写，不涉及情节设定 | "这段描写太冗长，精简一下" |
+| 局部文字修改 | 仅影响措辞和描写 | "这段描写太冗长，精简一下" |
 
-### Step 2: 影响评估
+### 步骤 2：影响评估
 
-根据修改类型，判断影响哪些设计文档：
-
-| 修改类型 | 架构设计 | 世界观 | 叙事编织(伏笔) | 人物设计 | 故事设计 | 章节 |
-|---------|---------|--------|--------------|---------|---------|------|
+| 修改类型 | 架构设计 | 世界观 | 叙事编织 | 人物设计 | 故事设计 | 章节 |
+|---------|---------|--------|---------|---------|---------|------|
 | 结构调整 | ✓ | | ✓ | | ✓ | ✓ |
 | 角色变更 | | | ✓ | ✓ | ✓ | ✓ |
 | 伏笔/支线变更 | | | ✓ | | ✓ | ✓ |
@@ -347,133 +332,115 @@ After a chapter is confirmed, check if `chapters.confirmed` is a multiple of 5 (
 | 风格调整 | | | | | | ✓ |
 | 局部文字修改 | | | | | | ✓ |
 
-**注意**：如果修改同时涉及多个类型（例如"让反派提前到第三章出场并揭示其与主角的关系"），取所有影响类型的并集。
+多类型修改取影响类型的并集。
 
-### Step 3: 制定更新计划
+### 步骤 3：制定更新计划
 
-按照依赖关系从上游到下游排列更新顺序：
+按依赖从上游到下游排列更新顺序：
 
-1. **架构设计** (blueprint.md) — 如受影响，最先更新
-2. **世界观** (world/) — 如受影响
-3. **叙事编织/伏笔** (narrative-weave.md) — 如受影响
-4. **人物设计** (characters/) — 如受影响
-5. **故事设计/大纲** (outline/) — 如受影响
-6. **章节重写/局部改写** — 最后执行
+1. **架构设计** (blueprint.md)
+2. **世界观** (world/)
+3. **叙事编织/伏笔** (narrative-weave.md)
+4. **人物设计** (characters/)
+5. **故事设计/大纲** (outline/)
+6. **章节重写/局部改写**
 
-向用户展示更新计划：
+向用户展示计划，等待确认后再执行。
 
-> 这个修改会影响以下设计文档：
-> - [文档1]：[具体影响说明]
-> - [文档2]：[具体影响说明]
->
-> 建议按以下顺序更新：
-> 1. [文档1] — [更新内容摘要]
-> 2. [文档2] — [更新内容摘要]
-> 3. 章节重写/局部改写
->
-> 是否按此计划执行？还是只更新部分文档？
+### 步骤 4：逐层更新设计文档
 
-等待用户确认后再开始执行。
+按计划顺序，对每个文档：
+1. 读取当前内容
+2. 只修改相关部分，保持其余不变
+3. 局部修改用 Edit，大范围用 Write
+4. 展示修改摘要
+5. 更新 `project.yaml` 对应阶段为 `pending_confirm`
 
-### Step 4: 逐层更新设计文档
+用户可在任一步骤提出调整，确认后进入下一步。
 
-按计划顺序，对每个需要更新的设计文档：
+### 步骤 5：章节重写/局部改写
 
-1. **读取当前文件**内容
-2. **定位修改范围**：只修改与用户请求相关的部分，保持其他内容不变
-3. **应用修改**：局部修改用 Edit 工具，大范围变更用 Write 工具重写
-4. **展示修改摘要**：告知用户改了什么、为什么这样改
-5. **更新 project.yaml**：将对应阶段状态设为 `pending_confirm`
+**局部改写**（涉及部分段落）：
+1. 读取目标章节
+2. 根据更新后的设计文档，使用 Edit 修改相关段落
+3. 更新章节末尾写作备注
+4. 展示修改结果
 
-用户可以在任一步骤中提出调整意见，确认后再进入下一步。
-
-### Step 5: 章节重写/局部改写
-
-所有相关设计文档更新并确认后，处理章节：
-
-**局部改写**（修改仅涉及章节的部分段落）：
-1. 读取目标章节文件
-2. 根据更新后的设计文档，使用 Edit 工具修改相关段落
-3. 更新章节末尾的写作备注，反映本次变更内容（新增的伏笔操作、角色状态变化、设定引用等）
-4. 展示修改结果供用户确认
-
-**整章重写**（修改涉及章节核心情节或大部分内容）：
-1. 读取更新后的该章大纲 (outline/chapters/chXX.md)
-2. 执行 Stage 9（章节写作）重写该章
-3. **进入 Phase 2 Review-Fix Loop**（与正常章节写作流程相同：编辑审核 → 修复 → 再审核，直到通过）
-4. 通过后展示章节和最终审核结果
+**整章重写**（涉及核心情节或大部分内容）：
+1. 读取更新后的该章大纲
+2. 执行阶段 9 重写该章
+3. 进入阶段 2 审核-修复循环
+4. 通过后展示结果
 
 ### 快速通道
 
-以下情况可跳过设计文档更新，直接修改章节：
-- **纯文字润色**：只涉及措辞、描写调整，不涉及情节、角色、设定变更
-- **写作备注修正**：修正章节末尾写作备注中的记录错误
-- **格式修复**：修复文件格式问题
+以下情况跳过设计文档更新，直接修改章节：
+- 纯文字润色
+- 写作备注修正
+- 格式修复
 
-即使在快速通道中，也需确认修改不与任何设计文档矛盾。如有疑问，仍应先检查上游设计。
+快速通道中仍需确认修改不与设计文档矛盾。
 
-## Milestone Consistency Check (every 5 chapters)
+## 里程碑一致性校验（每 5 章）
 
-When `chapters.confirmed` reaches a multiple of 5 (5, 10, 15, 20...), a cross-chapter consistency validation is **automatically triggered**. This is mandatory — no new chapters may be written until the consistency check passes.
+`chapters.confirmed` 达到 5 的倍数时自动触发。通过前不得写作新章节。
 
-### Step 1: Run Consistency Check
+### 步骤 1：执行一致性校验
 
-Execute Stage 11 (consistency checker agent) → produce `reviews/consistency-report.md`
+执行阶段 11（一致性校验 agent）→ 产出 `reviews/consistency-report.md`
 
-### Step 2: Evaluate Report
+### 步骤 2：评估报告
 
-**Fix triggers** (any one triggers a fix round):
-- 严重问题（影响故事逻辑） table has ≥1 rows
-- 一般问题（不影响主要逻辑但需要修正） table has ≥1 rows
+**修复触发**（满足任一）：
+- 严重问题（影响故事逻辑）表 ≥1 行
+- 一般问题（不影响主要逻辑但需要修正）表 ≥1 行
 
-**Pass condition**:
-- Zero 严重问题
-- Zero 一般问题
+**通过条件**：
+- 零严重问题
+- 零一般问题
 - 一致性评分 = A
 
-### Step 3: Fix Loop (up to 2 iterations)
+### 步骤 3：修复循环（最多 2 轮）
 
-If NOT passed:
+未通过时：
+1. 按报告修复所有问题章节
+2. 对每个修改章节重新执行阶段 10 → 更新 `reviews/chXX-review.md`
+3. 重新执行阶段 11 → 覆写 `reviews/consistency-report.md`
+4. 仍未通过 → 再重复一轮（最多 **2 轮**）
+5. 2 轮后仍有问题 → 中止，展示完整结果供用户决定
 
-1. **Fix affected chapters**: Apply targeted fixes to every chapter with issues listed in the report
-2. **Re-run editor**: Execute Stage 10 on each modified chapter → update their `reviews/chXX-review.md`
-3. **Re-run consistency check**: Execute Stage 11 → overwrite `reviews/consistency-report.md`
-4. If still not passed → repeat once more (max **2 iterations** total)
-5. If issues persist after 2 iterations → **halt**, present full findings to user for manual decision
+通过 → 进入步骤 4。
 
-If passed → proceed to Step 4.
+### 步骤 4：确认并更新
 
-### Step 4: Confirm & Update
-
-1. **Show the user**: Present the consistency report (summary is fine for long reports)
-2. **Auto-confirm or user-confirm**: Both acceptable
-3. **Update `project.yaml`**:
+1. 向用户展示一致性报告（长报告可摘要）
+2. 确认
+3. 更新 `project.yaml`：
    ```yaml
    consistency:
-     last_check_chapter: {N}    # the chapter number up to which consistency was verified
+     last_check_chapter: {N}
      last_check_date: "{date}"
      status: confirmed
    ```
 
-### Step 5: Proceed
+### 步骤 5：继续
 
-Resume chapter writing from the next chapter after the milestone.
+从里程碑后一章继续写作。
 
-## Important Constraints
+## 约束
 
-- All generated content is in **Chinese**. Summaries for the user can be in their language.
-- Respect **pipeline dependencies**. Never run a stage whose prerequisites are not confirmed.
-- **Warn about propagation** before suggesting edits to early stages.
-- Each agent prompt defines its own **constraints** section — follow them strictly.
-- Character files **must** include YAML front-matter (see `references/project-structure.md`).
-- Chapter files **must** include the 写作备注 (Writing Notes) section.
-- Use `references/context-procedures.md` for context compression procedures.
+- 所有生成内容使用**中文**。
+- 遵守**流水线依赖**，不得执行前置阶段未确认的阶段。
+- 修改早期阶段前必须**警告传播影响**。
+- 每个 agent prompt 中的**约束部分**必须严格遵守。
+- 角色文件必须包含 **YAML front-matter**。
+- 章节文件必须包含**写作备注**。
+- 使用 `references/context-procedures.md` 进行上下文压缩。
 
-## Reference Files
+## 参考文件
 
-For deeper detail, read these files as needed:
-
-- `references/pipeline.md` — Full pipeline dependency graph, propagation rules, status values
-- `references/project-structure.md` — Directory tree, project.yaml schema, file formats
-- `references/context-procedures.md` — Context compression and extraction procedures
-- `references/agents/01-genre-analyst.md` through `references/agents/11-consistency-checker.md` — Agent prompts for each stage
+按需读取：
+- `references/pipeline.md` — 完整依赖图、传播规则、状态值
+- `references/project-structure.md` — 目录树、project.yaml schema、文件格式
+- `references/context-procedures.md` — 上下文压缩与提取流程
+- `references/agents/01-genre-analyst.md` 至 `references/agents/11-consistency-checker.md` — 各阶段 agent prompt

@@ -1,24 +1,24 @@
-# Fictia Pipeline Reference
+# Fictia 流水线参考
 
-## Pipeline Stages
+## 流水线阶段
 
-Fictia orchestrates 11 stages in strict dependency order. Each stage has a dedicated AI agent.
+11 个阶段按严格依赖顺序执行，每个阶段有专用 agent。
 
-| # | Stage Name | Chinese Label | Dependencies | Incremental | Auto-Trigger |
-|---|-----------|---------------|-------------|-------------|--------------|
-| 1 | `genre_analysis` | 题材分析 | (none) | No | — |
-| 2 | `architecture` | 架构设计 | genre_analysis | No | — |
-| 3 | `style` | 风格设计 | genre_analysis, architecture | No | — |
-| 4 | `art_design` | 艺术设计 | genre_analysis, architecture, style | No | — |
-| 5 | `narrative_weave` | 叙事编织 | genre_analysis, architecture, art_design, style | No | — |
-| 6 | `world` | 世界观构建 | genre_analysis, architecture, art_design, narrative_weave | Yes | — |
-| 7 | `characters` | 人物设计 | world, architecture, style, art_design, narrative_weave | Yes | — |
-| 8 | `story` | 故事设计 | architecture, art_design, narrative_weave, world, characters | Yes | — |
-| 9 | `chapters` | 章节写作 | style, art_design, narrative_weave, world, characters, story | Yes | — |
-| 10 | `editor` | 编辑审核 | chapters, style | Yes | Yes (forced per chapter, must pass) |
-| 11 | `consistency` | 一致性校验 | chapters | Yes | Yes (forced every 5 chapters, must pass) |
+| # | 阶段 | 中文名 | 依赖 | 增量 | 自动触发 |
+|---|------|--------|------|------|---------|
+| 1 | `genre_analysis` | 题材分析 | （无） | 否 | — |
+| 2 | `architecture` | 架构设计 | genre_analysis | 否 | — |
+| 3 | `style` | 风格设计 | genre_analysis, architecture | 否 | — |
+| 4 | `art_design` | 艺术设计 | genre_analysis, architecture, style | 否 | — |
+| 5 | `narrative_weave` | 叙事编织 | genre_analysis, architecture, art_design, style | 否 | — |
+| 6 | `world` | 世界观构建 | genre_analysis, architecture, art_design, narrative_weave | 是 | — |
+| 7 | `characters` | 人物设计 | world, architecture, style, art_design, narrative_weave | 是 | — |
+| 8 | `story` | 故事设计 | architecture, art_design, narrative_weave, world, characters | 是 | — |
+| 9 | `chapters` | 章节写作 | style, art_design, narrative_weave, world, characters, story | 是 | — |
+| 10 | `editor` | 编辑审核 | chapters, style | 是 | 是（每章强制，必须通过） |
+| 11 | `consistency` | 一致性校验 | chapters | 是 | 是（每 5 章强制，必须通过） |
 
-## Dependency Diagram
+## 依赖图
 
 ```
 genre_analysis
@@ -34,12 +34,12 @@ genre_analysis
   │     │     │     │     │     │     │     │     └── consistency
 ```
 
-## Propagation Rules
+## 传播规则
 
-When a stage is modified, downstream stages are marked `needs_update` via BFS:
+某阶段修改后，下游阶段通过 BFS 标记为 `needs_update`：
 
-| Modified Stage | Affected Downstream Stages |
-|---------------|---------------------------|
+| 修改阶段 | 受影响下游 |
+|---------|-----------|
 | `genre_analysis` | architecture, style, art_design, narrative_weave, world, characters, story, chapters |
 | `architecture` | narrative_weave, story, chapters |
 | `style` | chapters, editor |
@@ -49,30 +49,30 @@ When a stage is modified, downstream stages are marked `needs_update` via BFS:
 | `characters` | story, chapters |
 | `story` | chapters |
 | `chapters` | consistency |
-| `editor` | (none) |
-| `consistency` | (none) |
+| `editor` | （无） |
+| `consistency` | （无） |
 
-**Warning**: Modifying `genre_analysis` invalidates 8 downstream stages — the most expensive change. Modifying `style` affects `chapters` and `editor`. Always warn the user about propagation before suggesting edits to early stages.
+**注意**：修改 `genre_analysis` 影响最多（8 个下游），代价最高。修改早期阶段前必须警告用户。
 
-## Stage Status Values
+## 阶段状态值
 
-| Status | Meaning |
-|--------|---------|
-| `not_started` | Stage has not been run yet |
-| `in_progress` | Stage is currently running (or has more incremental work) |
-| `pending_confirm` | Stage output is ready, awaiting user confirmation |
-| `confirmed` | User has approved the stage output |
-| `needs_update` | An upstream stage was modified; this stage needs re-running |
-| `failed` | Stage execution failed (check error details) |
+| 状态 | 含义 |
+|------|------|
+| `not_started` | 未执行 |
+| `in_progress` | 执行中（或有更多增量工作） |
+| `pending_confirm` | 产出已就绪，等待用户确认 |
+| `confirmed` | 用户已确认 |
+| `needs_update` | 上游阶段被修改，需重新执行 |
+| `failed` | 执行失败 |
 
-## Incremental Stages
+## 增量阶段
 
-Stages marked "Yes" for incremental support can process one item at a time:
-- `world`: Can build world files incrementally
-- `characters`: Can design characters one at a time
-- `story`: Can outline acts/chapters incrementally
-- `chapters`: Writes one chapter at a time (primary use case)
-- `editor`: Reviews one chapter at a time. **Forced**: must run after every chapter, and the review-fix loop must pass (zero 严重/一般 issues, score = A) before the chapter is confirmed. Up to 3 iterations.
-- `consistency`: Checks across all chapters. **Forced**: must run every 5 confirmed chapters (ch05, ch10, ch15...). The consistency-fix loop must pass (zero 严重/一般 issues, score = A) before new chapters may be written. Up to 2 iterations.
+标记为"是"的阶段可逐项处理：
+- `world`：逐个构建世界文件
+- `characters`：逐个设计角色
+- `story`：逐幕/逐章规划
+- `chapters`：逐章写作（主要使用场景）
+- `editor`：逐章审核。**强制**：每章写完后必须执行，审核-修复循环必须通过（零严重/一般问题，评分 = A）后章节才能确认。最多 3 轮。
+- `consistency`：跨章节校验。**强制**：每确认 5 章（ch05、ch10、ch15...）必须执行，一致性-修复循环必须通过（零严重/一般问题，评分 = A）后才能写作新章节。最多 2 轮。
 
-For incremental stages, after each item is processed, the agent checks `hasMoreWork()`. If more items remain, the stage stays `in_progress` and processes the next item.
+增量阶段每处理完一项后检查 `hasMoreWork()`，若有更多则保持 `in_progress` 继续处理下一项。

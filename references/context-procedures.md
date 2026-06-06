@@ -1,144 +1,143 @@
-# Context Gathering Procedures
+# 上下文收集流程
 
-These procedures replace the TypeScript `context-extractor.ts` module. They describe how to gather and compress context when acting as each agent. Follow these procedures to manage context efficiently.
+以下流程定义各 agent 如何收集和压缩上下文。
 
-## Character Registry (Tier 1 Summary) — `buildCharacterRegistry`
+## 角色速查表（Tier 1）— `buildCharacterRegistry`
 
-When you need a lightweight overview of all characters:
+轻量级角色总览：
 
-1. Use Glob to find: `characters/protagonist.md`, `characters/antagonist.md`, `characters/supporting/*.md`
-2. For each file, read only the YAML front-matter (the content between the `---` markers at the top)
-3. Build a summary table with columns: Name | Identity | Role | Key Traits | Language Style
-4. Also build a quick relationship list from the `relationships` field in front-matter
-5. Target: ~500-1000 characters total regardless of character count
+1. Glob 查找：`characters/protagonist.md`、`characters/antagonist.md`、`characters/supporting/*.md`
+2. 每个文件仅读取 YAML front-matter（`---` 标记之间的内容）
+3. 构建摘要表：姓名 | 身份 | 角色 | 核心特质 | 语言风格
+4. 从 `relationships` 字段构建关系列表
+5. 目标：总计 500-1000 字
 
-This is the "Tier 1" context — always load this when any agent needs character information.
+所有需要角色信息的 agent 必须先加载此层。
 
-## Character Quick Card — `buildCharacterQuickCard`
+## 角色快速卡 — `buildCharacterQuickCard`
 
-When you need detailed info for a specific character:
+单个角色的详细信息：
 
-1. Read the character's full file
-2. Extract from YAML front-matter: name, role, identity, age, traits, relationships, growth_arc, language_style
-3. From the body, extract: key background events, motivation, ability summary
-4. Present as a compressed card (~300-500 chars)
+1. 读取角色完整文件
+2. 从 front-matter 提取：name, role, identity, age, traits, relationships, growth_arc, language_style
+3. 从正文提取：关键背景事件、动机、能力摘要
+4. 压缩为卡片（300-500 字）
 
-## Chapter Narrative Weave Extraction — `extractChapterNarrativeWeave`
+## 章节叙事编织提取 — `extractChapterNarrativeWeave`
 
-When writing or reviewing a specific chapter, extract only chapter-relevant content from `narrative-weave.md`:
+从 `narrative-weave.md` 提取当前章节相关内容：
 
-1. Read `narrative-weave.md`
-2. Find the foreshadowing table (section with `| 编号 | 类型 | ...`) — filter rows where the chapter column matches current chapter
-3. Find the foreshadowing planting checklist — filter for current chapter entries
-4. Find the recovery/resolution status — filter for current chapter entries
-5. Find any "unprocessed signals" for this chapter
-6. Include the subplot table rows relevant to this chapter
-7. Skip all other chapters' entries
+1. 读取 `narrative-weave.md`
+2. 伏笔表（`| 编号 | 类型 | ...`）→ 筛选当前章节行
+3. 伏笔埋设检查清单 → 筛选当前章节条目
+4. 伏笔回收/解决状态 → 筛选当前章节条目
+5. 未处理信号 → 筛选当前章节
+6. 支线表 → 筛选相关行
+7. 跳过其他章节条目
 
-## Chapter Art Design Extraction — `extractChapterArtDesign`
+## 章节艺术设计提取 — `extractChapterArtDesign`
 
-When writing or reviewing a specific chapter, extract from `art-design.md`:
+从 `art-design.md` 提取当前章节相关内容：
 
-1. Read `art-design.md`
-2. Find the per-chapter emotional beat table — filter for current chapter row
-3. Find the imagery definitions that are relevant to this chapter
-4. Find the per-chapter narrative technique application table — filter for current chapter
-5. Skip other chapters' entries
+1. 读取 `art-design.md`
+2. 逐章情感节拍表 → 筛选当前章节行
+3. 相关意象定义
+4. 逐章叙事技巧应用表 → 筛选当前章节行
+5. 跳过其他章节条目
 
-## Chapter-to-Act Mapping
+## 章节-幕映射
 
-To determine which act a chapter belongs to, follow this priority:
+判断章节所属幕：
 
-1. **Blueprint priority**: Read `blueprint.md` and look for act definitions with chapter ranges (e.g., `name: "第一幕"\nchapters: [4, 15]`). Parse each act's chapter range and match the target chapter number.
-2. **Default fallback** (if blueprint has no parseable act ranges):
-   - Act 0 (序篇): ch1-3
-   - Act 1 (第一幕): ch4-15
-   - Act 2 (第二幕): ch16-30
-   - Act 3 (第三幕): ch31-45
-   - Act 4 (终篇): ch46-50
+1. **优先读 blueprint**：读取 `blueprint.md`，查找幕定义中的章节范围（如 `chapters: [4, 15]`）
+2. **默认回退**（blueprint 无可解析范围时）：
+   - 序篇：ch1-3
+   - 第一幕：ch4-15
+   - 第二幕：ch16-30
+   - 第三幕：ch31-45
+   - 终篇：ch46-50
 
-   Note: This default assumes a 50-chapter novel. For novels with different chapter counts, the blueprint MUST define act ranges explicitly.
+   非默认章数（非50章）时，blueprint 必须明确定义幕范围。
 
-## Style Stage Notes Extraction — `extractStyleStageNotes`
+## 风格阶段提取 — `extractStyleStageNotes`
 
-Extract stage-specific style rules from `style-guide.md` based on which act the chapter belongs to (use the Chapter-to-Act Mapping procedure above to determine the act).
+根据章节所在幕（用上述映射确定），从 `style-guide.md` 提取：
 
-Extract these sections:
-1. Overall tone and writing style rules
-2. Sentence norms and key prohibitions
-3. Dual-timeline style notes (if applicable)
-4. Style evolution trajectory row for the current act
-5. Chapter structure norms
+1. 整体文风和写作铁律
+2. 句式规范与核心禁忌
+3. 双时间线风格备注（如有）
+4. 当前幕的风格演变轨迹行
+5. 章节结构规范
 
-## World Quick Reference — `buildWorldQuickRef`
+## 世界观速查 — `buildWorldQuickRef`
 
-Compress world setting for agents that need world context but not full detail:
+压缩世界设定供需要世界上下文的 agent 使用：
 
-1. Read `world/setting.md` — keep: all headers, all tables, all bullet points, short lines (< 150 chars). Skip: long descriptive paragraphs (max 5 per section)
-2. Read `world/rules.md` — extract: power system summary (source, levels, key limitations), combat/magic system basics
-3. Combine into a concise reference (~1000-2000 chars)
+1. `world/setting.md` → 保留：所有标题、表格、要点、短行（<150字）。跳过：长段描写（每节最多5段）
+2. `world/rules.md` → 提取：力量体系摘要（来源、等级、核心限制）、战斗/魔法基础
+3. 合并为速查参考（1000-2000字）
 
-## Narrative Weave Summary — `buildNarrativeWeaveSummary`
+## 叙事编织摘要 — `buildNarrativeWeaveSummary`
 
-For agents that need the full-book narrative weave overview:
+全量叙事编织概览：
 
-1. Read `narrative-weave.md` in full
-2. Keep structural tables intact (foreshadowing table, subplot table, easter egg table) — these are per-item definitions
-3. Compress prose sections (relationship maps, subplot timelines, technique plans) to headers + first few lines
-4. Target: ~50% of original size
+1. 完整读取 `narrative-weave.md`
+2. 结构表格保持完整（伏笔表、支线表、彩蛋表）
+3. 散文部分压缩为标题 + 前几行
+4. 目标：原始大小的约 50%
 
-## Art Design Summary — `buildArtDesignSummary`
+## 艺术设计摘要 — `buildArtDesignSummary`
 
-For agents that need the full-book art design overview:
+全量艺术设计概览：
 
-1. Read `art-design.md` in full
-2. Keep imagery definitions and prose overviews in full
-3. Compress per-chapter tables (emotional beats, narrative technique application) to per-act summaries (use Chapter-to-Act Mapping procedure to determine act boundaries)
-4. For emotional beats: aggregate by act (average intensity, dominant emotions)
-5. For techniques: list techniques used per act
-6. Target: ~50% of original size
+1. 完整读取 `art-design.md`
+2. 意象定义和散文概览保持完整
+3. 逐章表格压缩为逐幕汇总（用章节-幕映射确定边界）
+4. 情感节拍：按幕聚合（平均强度、主导情绪）
+5. 技巧：按幕列出使用的技巧
+6. 目标：原始大小的约 50%
 
-## Previous Chapter Summary — `buildPreviousChapterSummary`
+## 前章摘要 — `buildPreviousChapterSummary`
 
-When writing a new chapter, extract writing notes from the previous chapter:
+写作新章节时，从前一章提取：
 
-1. Read the previous chapter file
-2. Look for a `### 写作备注` section (H3 heading)
-3. Extract that section in full — it contains: word count, foreshadowing operations, subplot progress, character state updates, next-chapter hooks
-4. If no notes section found, extract the last 300 characters as fallback
-5. Also include the full previous chapter text for continuity
+1. 读取前一章文件
+2. 查找 `### 写作备注` 部分
+3. 完整提取该部分（含字数、伏笔操作、角色状态更新、下章衔接）
+4. 无写作备注时，提取末尾 300 字作为回退
+5. 同时包含前一章完整正文
 
-## Context Assembly for Chapter Writing
+## 章节写作上下文组装
 
-When acting as the chapter-writer, assemble context in this order:
+章节写手按以下顺序组装上下文：
 
-1. Chapter outline (full content from `outline/chapters/chXX.md`)
-2. Style guide stage notes (extract using Style Stage Notes procedure)
-3. World quick reference (compress using World Quick Ref procedure)
-4. Character registry (build using Character Registry procedure)
-5. Narrative weave excerpt (extract using Chapter Narrative Weave procedure)
-6. Art design excerpt (extract using Chapter Art Design procedure)
-7. Previous chapter summary (extract using Previous Chapter Summary procedure)
-8. Previous chapter full text
+1. 章节大纲（`outline/chapters/chXX.md` 完整内容）
+2. 风格指南阶段提取（`extractStyleStageNotes`）
+3. 世界观速查（`buildWorldQuickRef`）
+4. 角色速查表（`buildCharacterRegistry`）
+5. 本章叙事编织（`extractChapterNarrativeWeave`）
+6. 本章艺术设计（`extractChapterArtDesign`）
+7. 前章摘要（`buildPreviousChapterSummary`）
+8. 前章完整正文
 
-## Context Assembly for Editor Review
+## 编辑审核上下文组装
 
-When acting as the editor, assemble:
+编辑审核时组装：
 
-1. Chapter text (full)
-2. Chapter outline (from `outline/chapters/chXX.md`) — **extract the 目标字数 field** for word-count verification
-3. Art design summary (compress using Art Design Summary procedure)
-4. Narrative weave summary (compress using Narrative Weave Summary procedure)
-5. World quick reference (compress using World Quick Ref procedure)
-6. Character registry (build using Character Registry procedure)
+1. 章节正文（完整）
+2. 章节大纲（`outline/chapters/chXX.md`）→ 提取**目标字数**
+3. 艺术设计摘要（`buildArtDesignSummary`）
+4. 叙事编织摘要（`buildNarrativeWeaveSummary`）
+5. 世界观速查（`buildWorldQuickRef`）
+6. 角色速查表（`buildCharacterRegistry`）
 
-## Context Assembly for Consistency Check
+## 一致性校验上下文组装
 
-When acting as the consistency-checker:
+一致性校验时组装：
 
-1. All chapter files — latest chapter gets full text, all prior chapters get only writing notes summaries
-2. Art design summary
-3. Narrative weave summary
-4. World quick reference
-5. `world/timeline.md` (full)
-6. Character registry
+1. 所有章节文件 — 最新章节完整正文，先前章节仅写作备注
+2. 艺术设计摘要
+3. 叙事编织摘要
+4. 世界观速查
+5. `world/timeline.md`（完整）
+6. 角色速查表

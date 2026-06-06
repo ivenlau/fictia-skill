@@ -1,58 +1,58 @@
-# Fictia Project Structure Reference
+# Fictia 项目结构参考
 
-## Single-Book Project Directory Tree
+## 单本目录结构
 
 ```
 project-root/
-├── project.yaml                    # Project config + pipeline state
-├── genre-analysis.md               # Stage 1: Genre analysis output
-├── blueprint.md                    # Stage 2: Architecture blueprint
-├── style-guide.md                  # Stage 3: Style guide (global anchor)
-├── art-design.md                   # Stage 4: Art design (imagery, emotional beats)
-├── narrative-weave.md              # Stage 5: Narrative web (foreshadowing, subplots)
-├── world/                          # Stage 6: World building
-│   ├── setting.md                  #   World overview, geography, history, society
-│   ├── rules.md                    #   Power system, combat, magic, core rules
-│   └── timeline.md                 #   Chronological event table
-├── characters/                     # Stage 7: Character design
-│   ├── protagonist.md              #   Protagonist (with YAML front-matter)
-│   ├── antagonist.md               #   Antagonist (with YAML front-matter)
-│   ├── relationships.md            #   Relationship network
-│   └── supporting/                 #   Supporting characters
+├── project.yaml                    # 项目配置 + 流水线状态
+├── genre-analysis.md               # 阶段 1：题材分析
+├── blueprint.md                    # 阶段 2：架构设计
+├── style-guide.md                  # 阶段 3：风格指南
+├── art-design.md                   # 阶段 4：艺术设计
+├── narrative-weave.md              # 阶段 5：叙事编织
+├── world/                          # 阶段 6：世界观构建
+│   ├── setting.md                  #   世界概况、地理、历史、社会
+│   ├── rules.md                    #   力量体系、战斗、核心规则
+│   └── timeline.md                 #   编年事件表
+├── characters/                     # 阶段 7：人物设计
+│   ├── protagonist.md              #   主角（含 YAML front-matter）
+│   ├── antagonist.md               #   反派（含 YAML front-matter）
+│   ├── relationships.md            #   人物关系图谱
+│   └── supporting/                 #   配角
 │       ├── mentor.md
 │       └── ...
-├── outline/                        # Stage 8: Story design
-│   ├── act-1.md                    #   Act 1 overview
-│   ├── act-2.md                    #   Act 2 overview
-│   ├── act-3.md                    #   Act 3 overview
-│   └── chapters/                   #   Per-chapter outlines
-│       ├── ch01.md                 #     Chapter 1 outline (with weave_notes)
+├── outline/                        # 阶段 8：故事设计
+│   ├── act-1.md                    #   第一幕概要
+│   ├── act-2.md                    #   第二幕概要
+│   ├── act-3.md                    #   第三幕概要
+│   └── chapters/                   #   逐章大纲
+│       ├── ch01.md                 #     含 weave_notes
 │       ├── ch02.md
 │       └── ...
-├── chapters/                       # Stage 9: Chapter writing
-│   ├── act-1/                      #   Act 1 chapters
-│   │   ├── ch01.md                 #     Chapter 1 prose + writing notes
+├── chapters/                       # 阶段 9：章节写作
+│   ├── act-1/                      #   第一幕章节
+│   │   ├── ch01.md                 #     正文 + 写作备注
 │   │   ├── ch02.md
 │   │   └── ...
 │   ├── act-2/
 │   └── act-3/
-└── reviews/                        # Stages 10-11: Reviews
-    ├── ch01-review.md              #   Chapter 1 editor review
+└── reviews/                        # 阶段 10-11：审核
+    ├── ch01-review.md              #   编辑审核
     ├── ch02-review.md
     ├── ...
-    └── consistency-report.md       #   Milestone consistency report (overwritten each check)
+    └── consistency-report.md       #   里程碑一致性报告（覆写）
 ```
 
-## Series Project Directory Tree
+## 系列目录结构
 
 ```
 series-root/
-├── series.yaml                     # Series config (shared world/characters)
+├── series.yaml                     # 系列配置（共享世界/角色）
 ├── shared/
-│   ├── world/                      # Shared world setting across books
-│   └── characters/                 # Shared character library
+│   ├── world/                      # 跨书共享世界设定
+│   └── characters/                 # 跨书共享角色库
 └── books/
-    ├── book-1/                     # Full single-book structure
+    ├── book-1/                     # 完整单本结构
     │   ├── project.yaml
     │   └── ...
     └── book-2/
@@ -60,43 +60,43 @@ series-root/
         └── ...
 ```
 
-## project.yaml Schema
+## project.yaml 格式
 
 ```yaml
-name: "项目名称"                    # Project name (required)
-author: "作者名"                    # Author (optional)
-description: "项目描述"             # Description (optional)
-created: "2026-05-27T00:00:00Z"    # Creation timestamp
+name: "项目名称"
+author: "作者名"
+description: "项目描述"
+created: "2026-05-27T00:00:00Z"
 last_modified: "2026-05-27T00:00:00Z"
-version: 1                         # Schema version
-genre: "玄幻"                       # Genre (optional)
-target_words: 800000               # Target total word count (optional)
-target_volumes: 3                  # Number of volumes/acts (optional)
-chapter_target_words: 3000         # Target words per chapter (optional)
+version: 1
+genre: "玄幻"
+target_words: 800000
+target_volumes: 3
+chapter_target_words: 3000               # 每章平均目标字数（由 target_words / 预估章节数 自动计算，或用户指定）
 
-pipeline:                          # Pipeline state per stage
+pipeline:
   genre_analysis:
-    status: "confirmed"            # not_started | in_progress | pending_confirm | confirmed | needs_update | failed
+    status: "confirmed"
     confirmedAt: "2026-05-27T10:00:00Z"
     outputFiles: ["genre-analysis.md"]
   architecture:
     status: "not_started"
-  # ... (one entry per stage)
+  # ... 每个阶段一条
 
-chapters:                          # Chapter progress (auto-computed)
-  total: 30                        # Total chapters (from outline/chapters/*.md count)
-  written: 5                       # Written chapters (from chapters/act-*/*.md count)
-  confirmed: 3                     # Confirmed chapters
+chapters:
+  total: 30
+  written: 5
+  confirmed: 3
 
-consistency:                       # Milestone consistency check tracking
-  last_check_chapter: 5            # Last chapter number up to which consistency was verified
-  last_check_date: "2026-06-04"    # Date of last check
-  status: "confirmed"              # not_started | in_progress | confirmed | needs_update
+consistency:
+  last_check_chapter: 5
+  last_check_date: "2026-06-04"
+  status: confirmed
 ```
 
-## Character File Format
+## 角色文件格式
 
-Every character file MUST start with YAML front-matter:
+每个角色文件必须以 YAML front-matter 开头：
 
 ```markdown
 ---
@@ -113,22 +113,22 @@ growth_arc: "从隐忍求存到主动担当"
 language_style: "简洁克制，偶尔锋利"
 ---
 
-[Detailed character description in narrative form...]
+[角色详细描述正文...]
 ```
 
-## Chapter File Format
+## 章节文件格式
 
-Chapter files contain prose followed by a "Writing Notes" section:
+章节正文后接写作备注：
 
 ```markdown
-[Chapter prose in Chinese...]
+[章节正文...]
 
 ---
 
 ### 写作备注
 
 - **字数**: 3200
-- **伏笔操作**: 
+- **伏笔操作**:
   - 埋设: 伏笔ID-F003 (神秘玉佩的来历)
   - 推进: 伏笔ID-F001 (林远身世线索在第三段提及)
 - **副线进度**: 感情线推进 (林远与苏瑶重逢)
@@ -137,25 +137,25 @@ Chapter files contain prose followed by a "Writing Notes" section:
 - **下章衔接点**: 本章结尾林远决定前往北域，下章从北域入口开始
 ```
 
-## Chapter Naming Convention
+## 文件命名规范
 
-- Act 1 chapters: `chapters/act-1/ch01.md`, `ch02.md`, ...
-- Act 2 chapters: `chapters/act-2/ch08.md`, `ch09.md`, ... (continuing numbering)
-- Act 3 chapters: `chapters/act-3/ch15.md`, ...
-- Chapter outlines: `outline/chapters/ch01.md`, `ch02.md`, ...
-- Reviews: `reviews/ch01-review.md`, `ch02-review.md`, ...
+| 内容 | 路径模式 |
+|------|---------|
+| 幕章节 | `chapters/act-1/ch01.md`, `ch02.md`, ... |
+| 章节大纲 | `outline/chapters/ch01.md`, `ch02.md`, ... |
+| 审核报告 | `reviews/ch01-review.md`, `ch02-review.md`, ... |
 
-## Where to Find Specific Information
+## 信息定位
 
-| Information | Location |
-|-------------|----------|
-| Project name, genre, target words | `project.yaml` → `name`, `genre`, `target_words` |
-| Pipeline stage status | `project.yaml` → `pipeline.<stage>.status` |
-| Chapter progress | `project.yaml` → `chapters` (or count files in `outline/chapters/` vs `chapters/act-*/`) |
-| Style rules | `style-guide.md` |
-| Power system details | `world/rules.md` |
-| Character quick info | Character files → YAML front-matter |
-| Foreshadowing tracking | `narrative-weave.md` → foreshadowing table |
-| Chapter-specific foreshadowing | `outline/chapters/chXX.md` → `weave_notes` |
-| Editor review scores | `reviews/chXX-review.md` → scoring table |
-| Consistency issues | `reviews/consistency-report.md` → issue list |
+| 信息 | 位置 |
+|------|------|
+| 项目名、题材、目标字数 | `project.yaml` → `name`, `genre`, `target_words` |
+| 流水线阶段状态 | `project.yaml` → `pipeline.<stage>.status` |
+| 章节进度 | `project.yaml` → `chapters`（或统计文件数） |
+| 风格规则 | `style-guide.md` |
+| 力量体系 | `world/rules.md` |
+| 角色速查 | 角色文件 → YAML front-matter |
+| 伏笔追踪 | `narrative-weave.md` → 伏笔表 |
+| 章节伏笔指令 | `outline/chapters/chXX.md` → `weave_notes` |
+| 编辑评分 | `reviews/chXX-review.md` → 评分表 |
+| 一致性问题 | `reviews/consistency-report.md` → 问题列表 |
