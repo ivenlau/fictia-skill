@@ -10,7 +10,15 @@ description: >
 
 Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取 agent prompt，
 从项目文件收集上下文，生成产出，通过 `project.yaml` 管理状态。
-全程使用原生工具（Read、Write、Edit、Glob、Grep），无外部依赖。
+使用本地零依赖 CLI 处理机械化环节，并配合 Read/Write/Edit/Glob/Grep 完成创作产出。
+
+## 路径约定
+
+**FICTIA_HOME**：本 SKILL.md 所在的目录。启动时先用 Glob 定位 SKILL.md，以其父目录作为 FICTIA_HOME。
+
+CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
+读取 agent prompt 等资源文件时，使用 `${FICTIA_HOME}/references/agents/...` 等路径。
+执行时将 `${FICTIA_HOME}` 替换为实际绝对路径。
 
 ## 启动判定
 
@@ -31,9 +39,9 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 ### 渲染方式
 
-1. 读取 `project.yaml` 获取项目信息和流水线状态。
-2. 按下方格式渲染面板，用状态符号替换各阶段状态。
-3. 面板之后进入对应工作流。
+1. 先确定 FICTIA_HOME（本 SKILL.md 所在目录）。
+2. 用 Bash 工具执行 `python "${FICTIA_HOME}/scripts/fictia" status`。
+3. **将命令输出的 ASCII 面板原样展示给用户作为第一条回复。** 不可跳过、不可省略、不可合并到后续文字中。
 
 ### 状态符号映射
 
@@ -98,14 +106,10 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 **用户清空上下文后重新进入时的主工作流。** 当用户调用 Fictia 且项目已存在、部分阶段已确认时，始终使用此工作流。
 
-0. **显示状态面板**（见"状态面板"节）。
-1. 读取 `project.yaml` 评估当前状态。
-2. 按依赖规则找到下一个可执行阶段：
-   - 状态为 `not_started` 或 `needs_update`
-   - 所有依赖阶段已 `confirmed`
-   - 流水线顺序中第一个满足条件的阶段
-3. 说明该阶段的目标和产出。
-4. 执行该阶段（见"流水线执行协议"）。
+0. **【必做】显示状态面板**：用 Bash 执行 `python "${FICTIA_HOME}/scripts/fictia" status`，将输出原样展示给用户。此步不可跳过。
+1. **确定下一阶段**：用 Bash 执行 `python "${FICTIA_HOME}/scripts/fictia" stage`，输出如 `阶段 09 · 章节写作（chapters）`。
+2. 说明该阶段的目标和产出。
+3. 执行该阶段（见"流水线执行协议"）。
 
 ## 流水线执行协议
 
@@ -129,13 +133,20 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 ### 步骤 2：收集上下文
 
-读取 agent prompt 中"上下文收集"部分指定的输入文件。使用 `references/context-procedures.md` 中的流程压缩和提取上下文。
+使用 CLI 组装上下文（**不再手动多次 Read 原始文件**）：
 
-若必需的输入文件为空或缺失，中止该阶段并通知用户哪个上游阶段未产出。
+- **写手**（阶段 9）：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble writer --chapter N` → `.fictia-cache/chNN-writer-context.md`
+- **编辑**（阶段 10）：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble editor --chapter N` → `.fictia-cache/chNN-editor-context.md`
+- **一致性校验**（阶段 11）：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble consistency` → `.fictia-cache/consistency-context.md`
+- **其他阶段**（1-8）：按 agent prompt 中"上下文收集"部分手动读取输入文件
+
+组装完成后，subagent 直接 Read 缓存文件即可。若必需的输入文件为空或缺失，中止该阶段并通知用户哪个上游阶段未产出。
 
 ### 步骤 3：执行 Agent 角色
 
 已具备：agent prompt（角色、能力、输出格式、约束）+ 收集的上下文。
+
+正式生成前，运行 `python "${FICTIA_HOME}/scripts/fictia" stage start <stage>` 将阶段标记为 `in_progress`。
 
 **扮演该 agent**，按 prompt 指令生成产出。使用中文。严格遵循输出格式。
 
@@ -145,9 +156,11 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 ### 步骤 5：更新项目状态
 
-编辑 `project.yaml`：
-- 已完成阶段设为 `pending_confirm`
-- 若下游阶段被波及，设为 `needs_update`
+非增量阶段产出写入后，运行 `python "${FICTIA_HOME}/scripts/fictia" stage ready <stage>` 标记为 `pending_confirm`，等待用户确认。**不要在用户确认前运行 `stage confirm`。**
+
+修改已有阶段产出时，先运行 `python "${FICTIA_HOME}/scripts/fictia" stage invalidate <stage>`（自动 BFS 传播下游 `needs_update`）。
+
+章节写作、编辑审核、一致性校验属于增量流程，按下方专门流程更新章节计数和报告状态，不用把整个 `chapters` 阶段提前 `confirm`。
 
 ### 步骤 6：向用户展示摘要
 
@@ -156,7 +169,7 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 ### 步骤 7：等待确认
 
 用户选择：
-- **确认**：标记为 `confirmed`。**不要自动进入下一阶段**，提醒用户：
+- **确认**：非增量阶段运行 `python "${FICTIA_HOME}/scripts/fictia" stage confirm <stage>` 标记为 `confirmed`。**不要自动进入下一阶段**，提醒用户：
   > 当前阶段已完成确认。为避免上下文膨胀影响后续生成质量，请使用 `/clear` 或 `/new` 清空当前对话上下文，然后重新调用 Fictia 技能继续下一个阶段。
 - **修改**：用户提供修改指令 → 定向修改后重新展示
 - **重做**：用户提供新方向 → 重新执行该阶段
@@ -197,6 +210,8 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 修改前提示："修改[X]会导致以下阶段需要重新运行：[list]。确定要继续吗？"
 
+确认后运行 `python "${FICTIA_HOME}/scripts/fictia" stage invalidate <stage>` 自动 BFS 传播下游 `needs_update`。
+
 ## 修改工作流
 
 ### 小修改（refine）
@@ -227,87 +242,23 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
    - 题材与子题材
    - 目标字数（默认 300,000）
    - 目标卷数（默认 1）
-   - 每章目标字数：由 `target_words / 预估章节数` 自动计算，不硬编码默认值。若用户明确指定则用用户值。预估章节数可根据题材和卷数推断（如玄幻长篇每卷 20-30 章，短篇每卷 8-12 章）
+   - 每章目标字数：默认使用 CLI 的 3000 字/章；若用户明确指定则传入 `--chapter-words` 使用用户值
    - 核心设定（一段话）
 
-2. **创建目录结构**：
+2. **创建项目**：运行 CLI 一键完成目录结构、`project.yaml` 和占位文件：
+   ```bash
+   python "${FICTIA_HOME}/scripts/fictia" init <项目名> --author <作者> --genre <题材> --target <目标字数> --volumes <卷数> --chapter-words <每章字数> --premise "<核心设定>"
    ```
-   <project-name>/
-   ├── project.yaml
-   ├── genre-analysis.md
-   ├── blueprint.md
-   ├── style-guide.md
-   ├── art-design.md
-   ├── narrative-weave.md
-   ├── world/
-   │   ├── setting.md
-   │   ├── rules.md
-   │   └── timeline.md
-   ├── characters/
-   │   ├── protagonist.md
-   │   ├── antagonist.md
-   │   ├── supporting/
-   │   └── relationships.md
-   ├── outline/
-   │   ├── act-1.md
-   │   ├── act-2.md
-   │   ├── act-3.md
-   │   └── chapters/
-   ├── chapters/
-   │   ├── act-1/
-   │   ├── act-2/
-   │   └── act-3/
-   └── reviews/
-   ```
-
-3. **创建 `project.yaml`**：
-   ```yaml
-   name: <project-name>
-   author: <author>
-   genre: <genre>
-   sub_genre: <sub-genre>
-   target_words: <number>
-   target_volumes: <number>
-   chapter_target_words: <number>        # 由 target_words / 预估章节数 计算，或用户指定
-   premise: <one paragraph>
-   pipeline:
-     genre_analysis: not_started
-     architecture: not_started
-     style: not_started
-     art_design: not_started
-     narrative_weave: not_started
-     world: not_started
-     characters: not_started
-     story: not_started
-     chapters: not_started
-     editor: not_started
-     consistency: not_started
-   chapters:
-     total: 0
-     written: 0
-     confirmed: 0
-   consistency:
-     last_check_chapter: 0
-     last_check_date: null
-     status: not_started
-   ```
-
-4. **创建占位文件**：为每个产出文件写入带标题的空 markdown 文件。
+   不指定 `--chapter-words` 时默认 3000 字/章。
 
 5. **启动阶段 1**：开始题材分析。
 
 ## 工作流：导出
 
-0. **显示状态面板**（见"状态面板"节）。
-1. 读取 `project.yaml` 获取项目名和作者。
-2. 确认格式（默认 `md`）：`txt`（纯文本）或 `md`（markdown）。
-3. 使用 Glob `chapters/act-*/ch*.md` 收集章节，按文件名排序。
-4. **逐章处理**：读取内容，移除 `### 写作备注` 及其前的 `---` 分隔符，保留正文。
-5. **拼装**：
-   - md：标题行 + 可选作者行 + `---` + 各章用 `---` 分隔
-   - txt：标题行 + `=` 下划线 + 各章直接拼接，去除 markdown 格式符
-6. 写入项目根目录的 `{项目名}.md` 或 `{项目名}.txt`。
-7. 报告输出路径和章节数。
+0. **【必做】显示状态面板**：用 Bash 执行 `python "${FICTIA_HOME}/scripts/fictia" status`，将输出原样展示给用户。
+1. 确认格式（默认 `md`）：`txt`（纯文本）或 `md`（markdown）。
+2. 运行 `python "${FICTIA_HOME}/scripts/fictia" export md` 或 `python "${FICTIA_HOME}/scripts/fictia" export txt`，自动完成章节收集、写作备注剥离、拼装和写入。
+3. 报告输出路径和章节数。
 
 ## 章节写作流程（强制审核-修复循环）
 
@@ -315,7 +266,7 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 ### 阶段 1：写作
 
-1. 读取 `project.yaml` → `chapters` 字段，或用 Glob 统计 `outline/chapters/` 与 `chapters/act-*/` 的文件数。
+1. 确定下一章：查看 `project.yaml` 的 `chapters` 字段（`written` + 1 = 下一章编号）。如计数与实际文件不一致，先用 `python "${FICTIA_HOME}/scripts/fictia" stage chapter set --total <N> --written <N> --confirmed <N>` 修正。
 2. 读取下一章大纲：`outline/chapters/chXX.md`
 3. 概述本章内容：场景、角色、事件、weave_notes 要求。
 4. 检查 weave_notes：需要埋设/推进的伏笔、需要推进的支线。
@@ -337,8 +288,8 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 **循环流程**：
 1. 执行阶段 10（编辑 agent）→ 产出 `reviews/chXX-review.md`
-2. 评估是否通过
-3. **未通过**：
+2. 评估是否通过：`python "${FICTIA_HOME}/scripts/fictia" verdict review reviews/chXX-review.md`，返回 JSON 含 `passed`/`severe`/`normal`/`grade`
+3. **未通过**（`passed=false`）：
    a. 按审核中的每个具体问题（严重 + 一般）定向修复 `chapters/act-{N}/chXX.md`
    b. 重新执行阶段 10 → 覆写 `reviews/chXX-review.md`
    c. 递增迭代计数器
@@ -359,8 +310,8 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 通过后：
 1. 向用户展示最终章节文本（或摘要）和审核报告（含修复日志）
 2. 确认方式：用户在场则简述结果并确认；用户已指示批量/自动模式则自动确认
-3. 更新 `project.yaml`：递增 `chapters.written` 和 `chapters.confirmed`
-4. 检查里程碑：`chapters.confirmed` 是否为 5 的倍数 → 是则触发阶段 4
+3. 更新状态：`python "${FICTIA_HOME}/scripts/fictia" stage chapter increment`（递增 `written` 和 `confirmed`）
+4. 检查里程碑：`python "${FICTIA_HOME}/scripts/fictia" milestone` → 到达里程碑则触发阶段 4
 
 ### 阶段 4：里程碑一致性校验（每 5 章）
 
@@ -376,7 +327,7 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 用户在已有项目中提出对小说内容的修改意见时（如"让反派提前出场"、"把第三章的战斗写得更激烈"），遵循本工作流。
 
-**先显示状态面板**（见"状态面板"节），然后继续下方流程。
+**【必做】先显示状态面板**：用 Bash 执行 `python "${FICTIA_HOME}/scripts/fictia" status`，将输出原样展示给用户，然后继续下方流程。
 
 **核心原则：先更新设计，再改写章节。**
 
@@ -428,7 +379,7 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 2. 只修改相关部分，保持其余不变
 3. 局部修改用 Edit，大范围用 Write
 4. 展示修改摘要
-5. 更新 `project.yaml` 对应阶段为 `pending_confirm`
+5. 更新状态：修改前先 `python "${FICTIA_HOME}/scripts/fictia" stage invalidate <stage>`，执行时 `stage start <stage>`，产出写入后 `stage ready <stage>`；用户确认后再 `stage confirm <stage>`
 
 用户可在任一步骤提出调整，确认后进入下一步。
 
@@ -465,20 +416,20 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 ### 步骤 2：评估报告
 
-**修复触发**（满足任一）：
-- 严重问题（影响故事逻辑）表 ≥1 行
-- 一般问题（不影响主要逻辑但需要修正）表 ≥1 行
+运行 `python "${FICTIA_HOME}/scripts/fictia" verdict consistency reviews/consistency-report.md`，返回 JSON 含 `passed`/`severe`/`normal`/`grade`。
 
-**通过条件**：
-- 零严重问题
-- 零一般问题
-- 一致性评分 = A
+**修复触发**（`passed=false`，满足任一）：
+- 严重问题（影响故事逻辑）≥1
+- 一般问题（不影响主要逻辑但需要修正）≥1
+
+**通过条件**（`passed=true`）：
+- 零严重问题、零一般问题、一致性评分 = A
 
 ### 步骤 3：修复循环（最多 2 轮）
 
 未通过时：
 1. 按报告修复所有问题章节
-2. 对每个修改章节重新执行阶段 10 → 更新 `reviews/chXX-review.md`
+2. 对每个修改章节重新执行阶段 10 → 更新 `reviews/chXX-review.md`，用 `python "${FICTIA_HOME}/scripts/fictia" verdict review` 验证通过
 3. 重新执行阶段 11 → 覆写 `reviews/consistency-report.md`
 4. 仍未通过 → 再重复一轮（最多 **2 轮**）
 5. 2 轮后仍有问题 → 中止，展示完整结果供用户决定
@@ -489,13 +440,7 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 
 1. 向用户展示一致性报告（长报告可摘要）
 2. 确认
-3. 更新 `project.yaml`：
-   ```yaml
-   consistency:
-     last_check_chapter: {N}
-     last_check_date: "{date}"
-     status: confirmed
-   ```
+3. 运行 `python "${FICTIA_HOME}/scripts/fictia" consistency confirm --chapter <N>`，记录 `last_check_chapter`、`last_check_date` 和 `status: confirmed`。
 
 ### 步骤 5：继续
 
@@ -511,7 +456,7 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 - 每个 agent prompt 中的**约束部分**必须严格遵守。
 - 角色文件必须包含 **YAML front-matter**。
 - 章节文件必须包含**写作备注**。
-- 使用 `references/context-procedures.md` 进行上下文压缩。
+- **使用 CLI 工具处理机械化环节**：面板渲染、状态推进、字数统计、上下文组装、审核解析、里程碑检查、导出——全部用 `fictia` CLI 完成，不做手动 Read/Edit。
 - **章节间清上下文**：每章确认后（含里程碑校验通过后），提醒用户使用 `/clear` 或 `/new` 再继续下一章。禁止自动串联写下一章。唯一例外是单章内的审核-修复循环——它在单次会话内连续完成。
 
 ## 参考文件
@@ -521,3 +466,12 @@ Claude 即流水线——直接扮演各 agent，从 `references/agents/` 读取
 - `references/project-structure.md` — 目录树、project.yaml schema、文件格式
 - `references/context-procedures.md` — 上下文压缩与提取流程
 - `references/agents/01-genre-analyst.md` 至 `references/agents/11-consistency-checker.md` — 各阶段 agent prompt
+- `scripts/README.md` — CLI 工具完整子命令文档
+
+## CLI 工具（scripts/fictia）
+
+流水线中所有可机械化的环节由 `fictia` CLI 完成。**LLM 不做机械事。**
+
+调用方式：`python "${FICTIA_HOME}/scripts/fictia" <command>`（所有平台通用）。
+
+完整子命令文档见 `scripts/README.md`。

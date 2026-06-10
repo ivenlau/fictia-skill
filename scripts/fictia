@@ -1,0 +1,518 @@
+#!/usr/bin/env python3
+"""
+Fictia CLI 主入口。
+
+子命令：
+  init <name>             新建项目（创建目录、project.yaml、占位文件）
+  status                  渲染状态面板
+  stage                   下一个可执行阶段
+  stage <sub> <stage>     ready / confirm / invalidate / start / fail
+  words <file>...         统计字数
+  judge <actual> <target> 字数判定
+  milestone               检查章节里程碑
+  consistency confirm     记录一致性校验通过的章节
+  ctx <program> [...]     上下文压缩与组装（8 个程序 + 3 个 assemble）
+  verdict review <file>   解析编辑审核报告
+  verdict consistency <file> 解析一致性校验报告
+  export <md|txt>         导出整本小说
+  lint                    项目结构校验
+"""
+
+from __future__ import annotations
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# 把 lib 加进 sys.path
+HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+# Windows 控制台 UTF-8 兼容（避免 GBK 编码失败）
+try:
+    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    sys.stderr.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+except Exception:
+    pass
+
+from lib import project as P
+from lib import render
+from lib import words as W
+from lib import lint as L
+from lib import context as C
+from lib import export as E
+
+
+# ---------- 子命令实现 ----------
+
+
+def _resolve_root(args: argparse.Namespace) -> Path:
+    """根据 --project 或 PWD 解析项目根。"""
+    if getattr(args, "project", None):
+        root = Path(args.project).resolve()
+        if not (root / "project.yaml").is_file():
+            sys.stderr.write(f"错误：{root}/project.yaml 不存在\n")
+            sys.exit(2)
+        return root
+    found = P.find_project_root()
+    if not found:
+        sys.stderr.write("错误：未找到 project.yaml（请在项目目录内运行或使用 --project 指定）\n")
+        sys.exit(2)
+    return found
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    """新建项目。"""
+    name = args.name
+    out = Path(args.out or name).resolve()
+    if out.exists() and any(out.iterdir()):
+        sys.stderr.write(f"错误：目标目录 {out} 已存在且非空\n")
+        return 2
+    out.mkdir(parents=True, exist_ok=True)
+
+    # 计算 chapter_target_words
+    target_words = int(args.target)
+    target_volumes = int(args.volumes)
+    if args.chapter_words:
+        chapter_target_words = int(args.chapter_words)
+    else:
+        # 业界惯例：每章约 3000 字（中文网文标准）
+        # 估算章节数 = target_words / 3000
+        chapter_target_words = 3000
+
+    now = P._utcnow_str()
+    pipeline: dict[str, dict] = {}
+    for _, key, _ in P.STAGES:
+        pipeline[key] = {"status": P.STATUS_NOT_STARTED, "confirmedAt": None, "outputFiles": []}
+
+    data = {
+        "name": name,
+        "author": args.author or "",
+        "description": args.premise or "",
+        "created": now,
+        "last_modified": now,
+        "version": 1,
+        "genre": args.genre or "",
+        "sub_genre": "",
+        "target_words": target_words,
+        "target_volumes": target_volumes,
+        "chapter_target_words": chapter_target_words,
+        "premise": args.premise or "",
+        "pipeline": pipeline,
+        "chapters": {"total": 0, "written": 0, "confirmed": 0},
+        "consistency": {"last_check_chapter": 0, "last_check_date": None, "status": P.STATUS_NOT_STARTED},
+    }
+
+    P.save_project(out, data)
+
+    # 创建产出占位文件
+    for _, key, name_cn in P.STAGES:
+        for rel in P.STAGE_OUTPUTS.get(key, []):
+            if rel.endswith(".gitkeep"):
+                (out / rel).parent.mkdir(parents=True, exist_ok=True)
+                (out / rel).touch()
+                continue
+            target = out / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            title = f"# {name_cn}\n\n（待 {name_cn} 阶段产出）\n"
+            target.write_text(title, encoding="utf-8")
+
+    print(f"✓ 项目已创建：{out}")
+    print(f"  路径: {out}")
+    print(f"  题材: {data['genre']}")
+    print(f"  目标字数: {target_words}")
+    print(f"  目标卷数: {target_volumes}")
+    print(f"  每章目标字数: {chapter_target_words}（默认 3000；如需调整，使用 --chapter-words 参数）")
+    if not args.chapter_words:
+        est = round(target_words / chapter_target_words)
+        print(f"  估算章节数: {est}")
+        print(f"  💡 玄幻长篇建议 80-120 章（按 3000 字/章）；如需更短或更长章节，使用 --chapter-words 调整")
+    print()
+    print("下一阶段：01 题材分析（genre-analysis.md）")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    data = P.load_project(root)
+    print(render.render_status_panel(data))
+    return 0
+
+
+def cmd_stage(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    data = P.load_project(root)
+    sub = args.sub
+
+    if sub == "next" or sub is None:
+        nxt = P.next_runnable_stage(data)
+        if nxt is None:
+            if P.all_confirmed(data):
+                print("全部阶段已完成")
+            else:
+                print("无下一个可执行阶段（等待上游阶段确认）")
+            return 0
+        num, key, name_cn = nxt
+        print(f"阶段 {num} · {name_cn}（{key}）")
+        return 0
+
+    if sub == "chapter":
+        # 用法: fictia stage chapter increment / fictia stage chapter set --total N --written N --confirmed N
+        action = args.stage
+        if action == "increment":
+            P.increment_chapters(data, 1)
+            P.save_project(root, data)
+            ch = data.get("chapters", {})
+            print(f"chapters: written={ch.get('written')}, confirmed={ch.get('confirmed')}")
+            return 0
+        if action == "set":
+            ch = data.setdefault("chapters", {"total": 0, "written": 0, "confirmed": 0})
+            for k in ("total", "written", "confirmed"):
+                v = getattr(args, k, None)
+                if v is not None:
+                    ch[k] = int(v)
+            P.save_project(root, data)
+            print(f"chapters: {ch}")
+            return 0
+        sys.stderr.write("用法: stage chapter increment | stage chapter set --total N --written N --confirmed N\n")
+        return 2
+
+    if sub == "show":
+        num = P.STAGE_NUM.get(args.stage, "?")
+        status = P.get_stage_status(data, args.stage)
+        sym = render.SYMBOLS.get(status, "[?]")
+        print(f"{num} {P.STAGE_NAME.get(args.stage, '?')} {sym} {status}")
+        return 0
+
+    if sub in ("ready", "confirm", "invalidate", "start", "fail", "reset"):
+        new_status = {
+            "ready": P.STATUS_PENDING_CONFIRM,
+            "confirm": P.STATUS_CONFIRMED,
+            "invalidate": P.STATUS_NEEDS_UPDATE,
+            "start": P.STATUS_IN_PROGRESS,
+            "fail": P.STATUS_FAILED,
+            "reset": P.STATUS_NOT_STARTED,
+        }[sub]
+        prev = P.get_stage_status(data, args.stage)
+        P.set_stage_status(data, args.stage, new_status)
+        # invalidate 还要传播
+        changed: list[str] = []
+        if sub == "invalidate":
+            changed = P.invalidate_downstream(data, args.stage)
+        P.save_project(root, data)
+        print(f"{args.stage}: {prev} → {new_status}")
+        if changed:
+            print(f"  下游标记为 needs_update: {', '.join(changed)}")
+        return 0
+
+    sys.stderr.write(f"未知子命令：{sub}\n")
+    return 2
+
+
+def cmd_words(args: argparse.Namespace) -> int:
+    total = 0
+    for f in args.files:
+        try:
+            r = W.count_file(f)
+        except FileNotFoundError:
+            sys.stderr.write(f"未找到：{f}\n")
+            return 2
+        suffix = "（写作备注已剥离）" if r["has_writing_notes"] else "（无 写作备注）"
+        print(f"{r['path']}: {r['words']} 字 {suffix}")
+        total += r["words"]
+    if len(args.files) > 1:
+        print(f"合计：{total} 字")
+    return 0
+
+
+def cmd_judge(args: argparse.Namespace) -> int:
+    actual = int(args.actual)
+    target = int(args.target)
+    r = W.judge(actual, target)
+    icon = {"达标": "✅", "轻微不足": "⚠️", "严重不足": "❌", "unknown": "?"}[r["verdict"]]
+    print(f"{icon} {r['verdict']}（{r['ratio'] * 100:.1f}%, {r['delta']:+d} 字）")
+    return 0
+
+
+def cmd_milestone(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    data = P.load_project(root)
+    hit, val = P.get_milestone(data)
+    chapters = data.get("chapters") or {}
+    confirmed = int(chapters.get("confirmed") or 0)
+    if hit:
+        print(f"✓ 已到达里程碑：第 {val} 章")
+        print(f"  → 必须触发一致性校验（一致性报告：reviews/consistency-report.md）")
+    else:
+        if val == 0:
+            print(f"尚未确认任何章节（当前 0 章）")
+        else:
+            print(f"未到里程碑（已确认 {confirmed} 章，下一里程碑：第 {val} 章）")
+    return 0
+
+
+def cmd_consistency(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    data = P.load_project(root)
+    if args.sub != "confirm":
+        sys.stderr.write("用法: consistency confirm --chapter <N>\n")
+        return 2
+    ch = int(args.chapter)
+    consistency = data.setdefault("consistency", {})
+    consistency["last_check_chapter"] = ch
+    consistency["last_check_date"] = P._utcnow_str()
+    consistency["status"] = P.STATUS_CONFIRMED
+    P.save_project(root, data)
+    print(f"consistency: confirmed at chapter {ch}")
+    return 0
+
+
+def cmd_ctx(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    program = args.program
+    cache_dir = root / ".fictia-cache"
+    cache_dir.mkdir(exist_ok=True)
+
+    # 从 positional 解析出 chapter/name/act/role（按 program 决定）
+    raw = args.arg
+
+    if program == "character-registry":
+        print(C.build_character_registry(root))
+    elif program == "character-card":
+        name = args.name or raw
+        if not name:
+            sys.stderr.write("character-card 需要角色名：fictia ctx character-card <名字>\n")
+            return 2
+        print(C.build_character_quick_card(root, name))
+    elif program == "world-quickref":
+        print(C.build_world_quickref(root))
+    elif program in ("chapter-weave", "chapter-art", "previous-chapter", "chapter-act"):
+        ch_str = args.chapter or raw
+        if not ch_str:
+            sys.stderr.write(f"{program} 需要章节号：fictia ctx {program} <章节号>\n")
+            return 2
+        ch = int(ch_str)
+        if program == "chapter-weave":
+            print(C.extract_chapter_narrative_weave(root, ch))
+        elif program == "chapter-art":
+            print(C.extract_chapter_art_design(root, ch))
+        elif program == "previous-chapter":
+            print(C.build_previous_chapter_summary(root, ch))
+        elif program == "chapter-act":
+            act = C.chapter_act(root, ch)
+            print(f"第 {ch} 章 → {act}")
+    elif program == "style-act":
+        act = args.act or raw
+        if not act:
+            sys.stderr.write("style-act 需要幕名：fictia ctx style-act <act-1/2/3/prologue/epilogue>\n")
+            return 2
+        print(C.extract_style_stage_notes(root, act))
+    elif program == "weave-summary":
+        print(C.build_narrative_weave_summary(root))
+    elif program == "art-summary":
+        print(C.build_art_design_summary(root))
+    elif program == "assemble":
+        # raw 可能是 "writer" / "editor" / "consistency" / 章节号 / 角色名等
+        # 优先 args.role，否则看 raw
+        role = args.role
+        if not role and raw in ("writer", "editor", "consistency"):
+            role = raw
+        if not role:
+            sys.stderr.write("assemble 需要 role：fictia ctx assemble <writer|editor|consistency> [章节号]\n")
+            return 2
+        if role == "consistency":
+            out = cache_dir / "consistency-context.md"
+            out.write_text(C.assemble_consistency_context(root), encoding="utf-8")
+            print(f"✓ 已写入：{out}")
+        else:
+            # chapter 优先 args.chapter，否则 raw（但 raw 这时已被用作 role）
+            ch_str = args.chapter
+            if not ch_str:
+                sys.stderr.write(f"assemble {role} 需要章节号：fictia ctx assemble {role} --chapter <N> 或先传 role\n")
+                return 2
+            ch = int(ch_str)
+            if role == "writer":
+                out = cache_dir / f"ch{ch:02d}-writer-context.md"
+                out.write_text(C.assemble_writer_context(root, ch), encoding="utf-8")
+                print(f"✓ 已写入：{out}")
+            else:
+                out = cache_dir / f"ch{ch:02d}-editor-context.md"
+                out.write_text(C.assemble_editor_context(root, ch), encoding="utf-8")
+                print(f"✓ 已写入：{out}")
+    else:
+        sys.stderr.write(f"未知 ctx 程序: {program}\n")
+        sys.stderr.write("可用: character-registry, character-card, world-quickref, chapter-weave, chapter-art, style-act, weave-summary, art-summary, previous-chapter, chapter-act, assemble\n")
+        return 2
+    return 0
+
+
+def cmd_verdict(args: argparse.Namespace) -> int:
+    kind = args.kind
+    path = Path(args.file)
+    if not path.is_file():
+        sys.stderr.write(f"未找到：{path}\n")
+        return 2
+    text = path.read_text(encoding="utf-8")
+    if kind == "review":
+        v = C.parse_review_verdict(text)
+        print(json.dumps(v, ensure_ascii=False, indent=2))
+        if v["passed"]:
+            print("✅ 通过")
+        else:
+            print("❌ 未通过")
+        return 0 if v["passed"] else 1
+    elif kind == "consistency":
+        # 复用同一解析器（结构相同）
+        v = C.parse_review_verdict(text)
+        print(json.dumps(v, ensure_ascii=False, indent=2))
+        if v["passed"]:
+            print("✅ 通过")
+        else:
+            print("❌ 未通过")
+        return 0 if v["passed"] else 1
+    else:
+        sys.stderr.write(f"未知 verdict 类型：{kind}\n")
+        return 2
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    try:
+        out = E.export(root, args.format)
+    except FileNotFoundError as e:
+        sys.stderr.write(f"错误：{e}\n")
+        return 2
+    except ValueError as e:
+        sys.stderr.write(f"错误：{e}\n")
+        return 2
+    ch_dir = root / "chapters"
+    n = len(list(ch_dir.rglob("ch*.md"))) if ch_dir.is_dir() else 0
+    print(f"✓ 已导出 {n} 章 → {out}")
+    return 0
+
+
+def cmd_lint(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    issues = L.lint_project(root)
+    if not issues:
+        print("✓ 项目结构无问题")
+        return 0
+    by_level: dict[str, list[dict]] = {"error": [], "warning": [], "info": []}
+    for i in issues:
+        by_level.setdefault(i["level"], []).append(i)
+    for level in ("error", "warning", "info"):
+        items = by_level.get(level, [])
+        if not items:
+            continue
+        icon = {"error": "✗", "warning": "⚠", "info": "ℹ"}[level]
+        print(f"{icon} {level.upper()}（{len(items)}）")
+        for i in items:
+            print(f"  [{i['code']}] {i['message']}")
+            print(f"    → {i['path']}")
+    return 1 if by_level.get("error") else 0
+
+
+# ---------- argparse 配置 ----------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="fictia",
+        description="Fictia AI 小说创作流水线 CLI 工具",
+    )
+    parser.add_argument("--project", "-p", help="项目目录（默认：从当前目录向上查找 project.yaml）")
+    sub = parser.add_subparsers(dest="cmd")
+
+    # init
+    p_init = sub.add_parser("init", help="新建项目")
+    p_init.add_argument("name", help="项目名（英文，用作目录名）")
+    p_init.add_argument("--author", help="作者名")
+    p_init.add_argument("--genre", help="题材（如 玄幻/都市/科幻）")
+    p_init.add_argument("--target", default="300000", help="目标字数（默认 300000）")
+    p_init.add_argument("--volumes", default="1", help="目标卷数（默认 1）")
+    p_init.add_argument("--chapter-words", help="每章目标字数（不指定则自动计算）")
+    p_init.add_argument("--premise", help="核心设定（一段话）")
+    p_init.add_argument("--out", help="输出目录（默认 ./<name>）")
+    p_init.set_defaults(func=cmd_init)
+
+    # status
+    p_status = sub.add_parser("status", help="渲染状态面板")
+    p_status.set_defaults(func=cmd_status)
+
+    # stage
+    p_stage = sub.add_parser("stage", help="流水线阶段管理")
+    p_stage.add_argument("sub", nargs="?", default="next",
+                         choices=["next", "show", "ready", "confirm", "invalidate", "start", "fail", "reset", "chapter"],
+                         help="子操作")
+    p_stage.add_argument("stage", nargs="?", help="阶段 key（如 architecture）或 chapter 子动作")
+    p_stage.add_argument("--total", help="chapter set 用的总章节数")
+    p_stage.add_argument("--written", help="chapter set 用的已写数")
+    p_stage.add_argument("--confirmed", help="chapter set 用的已确认数")
+    p_stage.set_defaults(func=cmd_stage, stage_action=None)
+
+    # words
+    p_words = sub.add_parser("words", help="统计字数")
+    p_words.add_argument("files", nargs="+", help="要统计的 md 文件")
+    p_words.set_defaults(func=cmd_words)
+
+    # judge
+    p_judge = sub.add_parser("judge", help="字数判定")
+    p_judge.add_argument("actual", help="实际字数")
+    p_judge.add_argument("target", help="目标字数")
+    p_judge.set_defaults(func=cmd_judge)
+
+    # milestone
+    p_ms = sub.add_parser("milestone", help="检查章节里程碑")
+    p_ms.set_defaults(func=cmd_milestone)
+
+    # consistency
+    p_consistency = sub.add_parser("consistency", help="一致性校验状态管理")
+    p_consistency.add_argument("sub", choices=["confirm"], help="子操作")
+    p_consistency.add_argument("--chapter", required=True, help="已通过一致性校验的章节号")
+    p_consistency.set_defaults(func=cmd_consistency)
+
+    # ctx
+    p_ctx = sub.add_parser("ctx", help="上下文压缩与组装")
+    p_ctx.add_argument("program",
+                       choices=["character-registry", "character-card", "world-quickref",
+                                "chapter-weave", "chapter-art", "style-act",
+                                "weave-summary", "art-summary", "previous-chapter",
+                                "chapter-act", "assemble"],
+                       help="ctx 程序")
+    p_ctx.add_argument("arg", nargs="?",
+                       help="位置参数（含义随 program 变：角色名/章节号/幕名/assemble role）")
+    p_ctx.add_argument("--name", help="character-card 用的角色名")
+    p_ctx.add_argument("--chapter", "-c", help="chapter-weave/art/previous-chapter/act/assemble 用的章节号")
+    p_ctx.add_argument("--act", help="style-act 用的幕名（act-1/act-2/act-3/act-prologue/act-epilogue）")
+    p_ctx.add_argument("--role", choices=["writer", "editor", "consistency"], help="assemble 用的角色")
+    p_ctx.set_defaults(func=cmd_ctx)
+
+    # verdict
+    p_v = sub.add_parser("verdict", help="解析审核/校验报告")
+    p_v.add_argument("kind", choices=["review", "consistency"], help="报告类型")
+    p_v.add_argument("file", help="报告文件路径")
+    p_v.set_defaults(func=cmd_verdict)
+
+    # export
+    p_e = sub.add_parser("export", help="导出整本小说")
+    p_e.add_argument("format", choices=["md", "txt"], help="导出格式")
+    p_e.set_defaults(func=cmd_export)
+
+    # lint
+    p_l = sub.add_parser("lint", help="项目结构校验")
+    p_l.set_defaults(func=cmd_lint)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not getattr(args, "cmd", None):
+        parser.print_help()
+        return 0
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

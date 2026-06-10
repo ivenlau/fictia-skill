@@ -1,0 +1,11 @@
+# Multica workspace
+.agent_context/
+.claude/
+.multica/
+
+# Python
+__pycache__/
+*.pyc
+
+# Fictia cache
+.fictia-cache/
