@@ -38,10 +38,12 @@
 - 用户对小说题材的描述（可能是一个词、一句话或一段详细说明）
 - 用户对作品风格、调性的偏好说明（如有）
 - 项目中已有的设定文件（如有）
+- `sources/*.md` 源文本（改写/仿写/续写项目，如有）
 
 # 上下文收集
 - 读取 `project.yaml` 获取项目元数据（名称、题材、目标字数等）
 - 如有用户提供的题材描述或偏好说明，直接使用
+- 如 `project.yaml.source_material` 存在，读取对应 `sources/*.md`，按 `rewrite` / `imitation` / `continuation` 模式提取题材、结构、受众和风险点
 
 # 输出规范
 使用 Write 工具将产出写入 `genre-analysis.md`，结构如下：

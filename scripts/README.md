@@ -39,6 +39,8 @@ fictia words <file>...         统计字数（自动剥离写作备注）
 fictia judge <actual> <target> 字数判定
 fictia milestone               检查章节里程碑（每 5 章）
 fictia consistency confirm     记录一致性校验通过的章节
+fictia source import <file>    导入改写/仿写/续写源文本（epub/txt/md）
+fictia source list             列出已导入源文本
 fictia ctx <program> [...]     上下文压缩与组装
 fictia verdict review <file>   解析编辑审核报告
 fictia verdict consistency <file> 解析一致性校验报告
@@ -47,6 +49,19 @@ fictia lint                    项目结构校验
 ```
 
 所有子命令都支持 `--project / -p` 显式指定项目目录；不指定则从当前目录向上查找 `project.yaml`。
+
+## source 子命令详解
+
+源文本用于小说改写、仿写和续写，导入后统一保存为 `<project>/sources/*.md`，并记录到 `project.yaml` 的 `source_material` 字段。
+
+```bash
+fictia source import novel.epub --workflow rewrite
+fictia source import sample.txt --workflow imitation --title "参考文本"
+fictia source import draft.md --workflow continuation
+fictia source list
+```
+
+支持格式：`.epub`、`.txt`、`.md`。`ctx assemble writer/editor/consistency` 会自动把已导入源文本摘要加入上下文。
 
 ## ctx 子命令详解
 

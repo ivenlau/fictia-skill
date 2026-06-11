@@ -43,64 +43,27 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 2. 用 Bash 工具执行 `python "${FICTIA_HOME}/scripts/fictia" status`。
 3. **将命令输出的 ASCII 面板原样展示给用户作为第一条回复。** 不可跳过、不可省略、不可合并到后续文字中。
 
-### 状态符号映射
-
-| `project.yaml` 状态 | 符号 |
-|---|---|
-| `confirmed` | `[✓]` |
-| `in_progress` | `[▸]` |
-| `pending_confirm` | `[◇]` |
-| `needs_update` | `[!]` |
-| `not_started` | `[ ]` |
-| `failed` | `[✗]` |
-
-### 面板格式
-
-将 `{...}` 替换为 `project.yaml` 中的值。`下一步` 为依赖全部满足的、状态为 `not_started` 或 `needs_update` 的第一个阶段。若全部完成则显示 `全部阶段已完成`。
-
-```
-╭────────────────────────────────────────────────╮
-│              F I C T I A                        │
-│          AI 小说创作流水线                       │
-├────────────────────────────────────────────────┤
-│  {name} · {author} · {genre}                   │
-│  {target_words}字 · {target_volumes}卷          │
-│  每章{chapter_target_words}字                   │
-│  已写 {chapters.written}/{chapters.total}章     │
-├────────────────────────────────────────────────┤
-│  01 题材分析  {symbol}  02 架构设计  {symbol}   │
-│  03 风格设计  {symbol}  04 艺术设计  {symbol}   │
-│  05 叙事编织  {symbol}  06 世界观构建 {symbol}  │
-│  07 人物设计  {symbol}  08 故事设计   {symbol}  │
-│  09 章节写作  {symbol}  10 编辑审核   {symbol}  │
-│  11 一致性校验 {symbol}                         │
-│  ✓已确认 ▸进行中 ◇待确认 !需更新 空格未开始     │
-├────────────────────────────────────────────────┤
-│  ▶ 下一步: 阶段 {num} · {中文阶段名}            │
-╰────────────────────────────────────────────────╯
-```
-
-### 阶段编号映射
-
-| # | yaml key | 中文名 |
-|---|----------|--------|
-| 01 | `genre_analysis` | 题材分析 |
-| 02 | `architecture` | 架构设计 |
-| 03 | `style` | 风格设计 |
-| 04 | `art_design` | 艺术设计 |
-| 05 | `narrative_weave` | 叙事编织 |
-| 06 | `world` | 世界观构建 |
-| 07 | `characters` | 人物设计 |
-| 08 | `story` | 故事设计 |
-| 09 | `chapters` | 章节写作 |
-| 10 | `editor` | 编辑审核 |
-| 11 | `consistency` | 一致性校验 |
-
 ## 工作流：新建项目
 
 1. 与用户讨论题材、目标字数、卷数、核心设定。
 2. 创建项目（见"新建项目创建"小节）。
 3. 进入流水线执行。
+
+## 工作流：小说改写 / 仿写 / 续写
+
+当用户提供已有小说数据并要求改写、仿写或续写时，仍使用现有 01-11 阶段流水线；区别只是先导入源文本，并在后续阶段把源文本作为参考上下文。
+
+1. **确认模式**：
+   - `rewrite`（改写）：保留核心情节/人物功能，重构表达、节奏和细节。
+   - `imitation`（仿写）：提取题材、叙事结构、节奏、语言风格，创作新故事；不照搬设定和正文。
+   - `continuation`（续写）：分析已给文本的情节、人物、伏笔和风格，从断点继续写。
+2. **创建或进入项目**：如无 `project.yaml`，先按新建项目流程创建项目；如已有项目，先显示状态面板。
+3. **导入源文本**：运行 `python "${FICTIA_HOME}/scripts/fictia" source import <file> --workflow <rewrite|imitation|continuation>`。支持 `.epub`、`.txt`、`.md`，导入后会规范化为 `sources/*.md` 并写入 `project.yaml.source_material`。
+4. **执行现有阶段**：
+   - 阶段 1-3：从源文本提炼题材、结构、风格约束。
+   - 阶段 4-8：按目标模式重建艺术设计、叙事、世界、人物和大纲。
+   - 阶段 9-11：继续使用写作、编辑、一致性校验流程；`ctx assemble` 会自动带入源文本参考。
+5. **合规约束**：改写/仿写时避免大段复用原文；续写时只延续用户提供文本中的上下文、人物和伏笔。
 
 ## 工作流：继续流水线
 
@@ -133,7 +96,7 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 
 ### 步骤 2：收集上下文
 
-使用 CLI 组装上下文（**不再手动多次 Read 原始文件**）：
+使用 CLI 组装上下文：
 
 - **写手**（阶段 9）：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble writer --chapter N` → `.fictia-cache/chNN-writer-context.md`
 - **编辑**（阶段 10）：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble editor --chapter N` → `.fictia-cache/chNN-editor-context.md`
@@ -260,9 +223,9 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 2. 运行 `python "${FICTIA_HOME}/scripts/fictia" export md` 或 `python "${FICTIA_HOME}/scripts/fictia" export txt`，自动完成章节收集、写作备注剥离、拼装和写入。
 3. 报告输出路径和章节数。
 
-## 章节写作流程（强制审核-修复循环）
+## 章节写作流程
 
-每章必须通过 写作 → 审核 → 修复 → 确认 完整循环。通过条件：**零严重问题、零一般问题、综合评分 = A**。
+【强制】每章必须通过 写作 → 审核 → 修复 → 确认 完整循环。通过条件：**零严重问题、零一般问题、综合评分 = A**。
 
 ### 阶段 1：写作
 
@@ -272,9 +235,9 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 4. 检查 weave_notes：需要埋设/推进的伏笔、需要推进的支线。
 5. 执行阶段 9（章节写手 agent）。
 
-### 阶段 2：审核-修复循环（强制，最多 3 轮）
+### 阶段 2：审核-修复循环
 
-每章写完后自动触发审核-修复循环。
+【强制，最多 3 轮】每章写完后自动触发审核-修复循环。
 
 **修复触发**（满足任一即触发）：
 - 严重问题（必须修改）表 ≥1 行

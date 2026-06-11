@@ -10,6 +10,9 @@ project-root/
 ├── style-guide.md                  # 阶段 3：风格指南
 ├── art-design.md                   # 阶段 4：艺术设计
 ├── narrative-weave.md              # 阶段 5：叙事编织
+├── sources/                        # 改写/仿写/续写源文本（由 source import 生成）
+│   ├── original.md                 #   epub/txt/md 规范化后的文本
+│   └── ...
 ├── world/                          # 阶段 6：世界观构建
 │   ├── setting.md                  #   世界概况、地理、历史、社会
 │   ├── rules.md                    #   力量体系、战斗、核心规则
@@ -92,7 +95,19 @@ consistency:
   last_check_chapter: 5
   last_check_date: "2026-06-04"
   status: confirmed
+
+source_material:
+  workflow: rewrite                  # rewrite / imitation / continuation
+  files:
+    - title: "源文本标题"
+      workflow: rewrite
+      format: epub                   # epub / txt / md
+      original: "C:/path/original.epub"
+      text: sources/original.md
+      importedAt: "2026-06-11T12:00:00Z"
 ```
+
+`source_material` 仅在小说改写、仿写、续写流程中出现。源文件统一由 `fictia source import <file> --workflow <mode>` 导入，后续 `ctx assemble` 会自动把 `sources/*.md` 的节选放入写手、编辑和一致性校验上下文。
 
 ## 角色文件格式
 

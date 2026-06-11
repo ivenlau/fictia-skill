@@ -13,6 +13,7 @@ import glob as _glob
 from pathlib import Path
 from .words import WRITING_NOTES_RE
 from . import project as P
+from . import source as S
 
 
 # ---------- YAML front-matter 工具 ----------
@@ -508,6 +509,13 @@ def assemble_writer_context(root: Path, chapter_num: int) -> str:
             parts.append(prev_files[0].read_text(encoding="utf-8"))
             parts.append("")
 
+    sources = S.build_source_context(root)
+    if "无源文本素材" not in sources:
+        parts.append("## 9. 源文本参考")
+        parts.append("")
+        parts.append(sources)
+        parts.append("")
+
     return "\n".join(parts)
 
 
@@ -562,6 +570,13 @@ def assemble_editor_context(root: Path, chapter_num: int) -> str:
     parts.append("")
     parts.append(build_character_registry(root))
     parts.append("")
+
+    sources = S.build_source_context(root)
+    if "无源文本素材" not in sources:
+        parts.append("## 7. 源文本参考")
+        parts.append("")
+        parts.append(sources)
+        parts.append("")
 
     return "\n".join(parts)
 
@@ -620,6 +635,13 @@ def assemble_consistency_context(root: Path) -> str:
     parts.append("")
     parts.append(build_world_quickref(root))
     parts.append("")
+
+    sources = S.build_source_context(root)
+    if "无源文本素材" not in sources:
+        parts.append("## 4.5 源文本参考")
+        parts.append("")
+        parts.append(sources)
+        parts.append("")
 
     # 5. world/timeline.md（完整）
     timeline = root / "world" / "timeline.md"

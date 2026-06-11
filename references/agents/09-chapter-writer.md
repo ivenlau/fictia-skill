@@ -80,6 +80,7 @@
 - 情感节拍（本章专属）
 - 上章写作备注
 - 前一章正文（完整）
+- 源文本参考（改写/仿写/续写项目，由 `ctx assemble writer` 自动附加）
 
 **按需读取完整文件**：如需深入了解，可随时用 Read 工具读取完整文件。
 
@@ -92,6 +93,7 @@
 5. 从 `narrative-weave.md` 提取本章叙事配置（按 `extractChapterNarrativeWeave` 程序）
 6. 从 `art-design.md` 提取本章情感节拍（按 `extractChapterArtDesign` 程序）
 7. 如有前一章，读取其写作备注和正文（按 `buildPreviousChapterSummary` 程序）
+8. 如上下文包含源文本参考，按 `rewrite` / `imitation` / `continuation` 模式使用：改写重构表达，仿写抽象风格，续写保持断点后的连续性；不得大段复用源文本原句
 
 # 输出规范
 

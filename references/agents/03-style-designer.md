@@ -49,12 +49,14 @@
 - genre-analysis.md（题材分析报告）
 - 用户对文风的偏好描述（如有）
 - 参考作品（如有）
+- `sources/*.md` 源文本（改写/仿写/续写项目，如有）
 - blueprint.md（结构设计，如有）
 
 # 上下文收集
 - 读取 `genre-analysis.md` 获取题材分析
 - 读取 `blueprint.md` 获取结构设计（如有）
 - 如有用户提供的风格偏好或参考作品说明，直接使用
+- 如 `project.yaml.source_material` 存在，读取对应 `sources/*.md`：改写/续写提炼并延续原文叙事口吻，仿写只抽象出句式、节奏、描写密度和对话风格，不复用专名和原文表达
 
 # 输出规范
 使用 Write 工具将产出写入 `style-guide.md`，结构如下：
