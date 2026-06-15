@@ -16,7 +16,7 @@
 | 8 | `story` | 故事设计 | architecture, art_design, narrative_weave, world, characters | 是 | — |
 | 9 | `chapters` | 章节写作 | style, art_design, narrative_weave, world, characters, story | 是 | — |
 | 10 | `editor` | 编辑审核 | chapters, style | 是 | 是（每章强制，必须通过） |
-| 11 | `consistency` | 一致性校验 | chapters | 是 | 是（每 5 章强制，必须通过） |
+| 11 | `consistency` | 一致性校验 | chapters | 是 | 是（每 5 章提醒，可跳过） |
 
 ## 源文本工作流映射
 
@@ -85,6 +85,6 @@ genre_analysis
 - `story`：逐幕/逐章规划
 - `chapters`：逐章写作（主要使用场景）
 - `editor`：逐章审核。**强制**：每章写完后必须执行，审核-修复循环必须通过（零严重/一般问题，评分 = A）后章节才能确认。最多 3 轮。
-- `consistency`：跨章节校验。**强制**：每确认 5 章（ch05、ch10、ch15...）必须执行，一致性-修复循环必须通过（零严重/一般问题，评分 = A）后才能写作新章节。最多 2 轮。
+- `consistency`：跨章节校验。**提醒**：每确认 5 章（ch05、ch10、ch15...）提醒用户做校验，用户可跳过；不阻塞新章节写作。`consistency` 状态保持旧值，下次里程碑再次提醒。校验内部修复循环（最多 2 轮）逻辑不变。
 
 增量阶段每处理完一项后检查 `hasMoreWork()`，若有更多则保持 `in_progress` 继续处理下一项。

@@ -412,11 +412,16 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 3. 更新状态：`python "${FICTIA_HOME}/scripts/fictia" stage chapter increment`（递增 `written` 和 `confirmed`）
 4. 检查里程碑：`python "${FICTIA_HOME}/scripts/fictia" milestone` → 到达里程碑则触发阶段 4
 
-### 阶段 4：里程碑一致性校验（每 5 章）
+### 阶段 4：里程碑一致性校验（每 5 章，提醒可跳过）
 
 章节确认后，检查 `chapters.confirmed` 是否为 5 的倍数（5、10、15、20...）。
 
-**到达里程碑 → 自动触发一致性校验**（见下方专节）。校验通过前不得写作新章节。
+**到达里程碑 → 提醒用户做一致性校验**（见下方专节）。用户可以选择：
+- **立即校验**：进入"里程碑一致性校验"主流程
+- **稍后校验**：跳过本次提醒，下次确认章节时再次检查
+- **跳过本次**：本次里程碑不校验，`consistency` 状态保持旧值
+
+**不阻塞新章节写作**——即使本次跳过，用户确认下一章后仍可继续。
 
 **未到里程碑 → 提醒用户清上下文后继续下一章。**
 
@@ -505,9 +510,9 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 
 快速通道中仍需确认修改不与设计文档矛盾。
 
-## 里程碑一致性校验（每 5 章）
+## 里程碑一致性校验（每 5 章，提醒可跳过）
 
-`chapters.confirmed` 达到 5 的倍数时自动触发。通过前不得写作新章节。
+`chapters.confirmed` 达到 5 的倍数时**提醒**用户做校验。**用户可跳过，本次不阻塞新章节写作**——`consistency.last_check_chapter` 与 `consistency.status` 保持旧值，下次到达里程碑时再次提醒。
 
 ### 步骤 1：执行一致性校验
 
