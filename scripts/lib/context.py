@@ -260,27 +260,33 @@ def extract_chapter_art_design(root: Path, chapter_num: int) -> str:
 
 
 def extract_style_stage_notes(root: Path, act: str) -> str:
-    """从 style-guide.md 提取与当前幕相关的风格要点。"""
+    """从 style-guide.md 提取风格要点。
+
+    - 文件较小或无清晰标题结构时，加载全文
+    - 否则按二级标题切片加载所有章节
+    """
     f = root / "style-guide.md"
     if not f.is_file():
         return "（style-guide.md 不存在）"
-    text = f.read_text(encoding="utf-8")
+    text = f.read_text(encoding="utf-8").strip()
 
-    lines: list[str] = [f"## 风格阶段提取（{act}）", ""]
-    # 取整体部分（## 之前都是"整体"或前置）
-    head = text.split("## ", 1)[0]
-    lines.append("### 整体文风与写作铁律（前言部分）")
-    lines.append("")
-    lines.append(head.strip()[:2000])
-    lines.append("")
+    h2_matches = list(re.finditer(r"^##\s+\S", text, re.MULTILINE))
 
-    # 找风格演变表
-    for tbl in re.findall(r"((?:^\|.*\|\s*\n)+)", text, re.MULTILINE):
-        if act in tbl or act.replace("act-", "第") in tbl:
-            lines.append(f"### {act} 风格演变行")
-            lines.append("")
-            lines.append(tbl.rstrip())
-            lines.append("")
+    if len(h2_matches) < 3 or len(text) < 2000:
+        return f"## 风格指南（{act}，全文）\n\n{text}\n"
+
+    lines: list[str] = [f"## 风格指南（{act}）", ""]
+
+    head = text[: h2_matches[0].start()].strip()
+    if head:
+        lines.append(head)
+        lines.append("")
+
+    for i, m in enumerate(h2_matches):
+        start = m.start()
+        end = h2_matches[i + 1].start() if i + 1 < len(h2_matches) else len(text)
+        lines.append(text[start:end].strip())
+        lines.append("")
 
     return "\n".join(lines)
 
