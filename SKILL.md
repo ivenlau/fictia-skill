@@ -246,6 +246,35 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 
 **此规则适用于全部阶段（1–11）。** 每次确认后必须停下来提醒用户清上下文。唯一例外是审核-修复循环和里程碑一致性校验——它们是单次会话内的迭代循环，应连续完成。
 
+### 步骤 7a：笔记自动整理（后台，无感）
+
+笔记管理是后台维护，**不是创作主流程的一部分**。所有动作静默执行，不询问用户、不阻塞流程。
+
+**自动记录触发**（orchestrator 启发式判断，无提示）：
+- 用户发出修改/改写/偏好陈述指令
+- 用户对审核/校验报告的方向性反应
+- 阶段切换时的方向性发言
+
+排除：状态查询、闲聊、确认词（"ok"/"继续"/"确认"等）。调用 `fictia notes add --text "..."` 追加到 `notes/raw.md`，状态默认 `pending`。
+
+**自动整理触发**：阶段确认后、提醒用户清上下文前，静默跑整理。
+
+1. 跑 `fictia notes list --status pending` 检查待整理条目
+2. 读 `notes/raw.md` + 相关项目文件（仅参考，不修改项目文件）
+3. 主代理推理：每条 pending 归类为
+   - **蒸馏**：抽象偏好/规则，append 到 `notes/summary.md` 对应主题分类
+   - **合并/过期**：合并到已有条目
+4. 更新 raw.md 状态为 `summarized`（不删除，永不丢失）
+5. **不**修改 style-guide / 角色 / 大纲等任何项目文件——那些改动走"内容修改"工作流
+6. **不**展示报告、**不**询问确认、**不**阻塞主流程（失败时记 stderr 但不报错）
+
+**章节写作自动加载**：`ctx assemble writer/editor/consistency` 检测到 `notes/summary.md` 存在即追加到上下文末尾。无需 flag。
+
+**审计与回滚**（用户主动行为，不自动触发）：
+- `fictia notes list` / `fictia notes show <id>` 浏览与查看
+- `fictia notes revert <id>` 把某条标记为 `reverted`，从 summary.md 移除蒸馏结果
+- 直接 Edit `notes/summary.md` 手动调整
+
 ## 阶段速查
 
 | # | 阶段 | 产出文件 | 依赖 | 增量 |
@@ -528,6 +557,7 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 - 章节文件必须包含**写作备注**。
 - **使用 CLI 工具处理机械化环节**：面板渲染、状态推进、字数统计、上下文组装、审核解析、里程碑检查、导出——全部用 `fictia` CLI 完成，不做手动 Read/Edit。
 - **章节间清上下文**：每章确认后（含里程碑校验通过后），提醒用户使用 `/clear` 或 `/new` 再继续下一章。禁止自动串联写下一章。唯一例外是单章内的审核-修复循环——它在单次会话内连续完成。
+- **用户笔记 verbatim 保留**：所有用户方向性发言必须原样写入 `notes/raw.md`（通过 `fictia notes add`），不得改写或摘要后丢弃；状态可流转为 `summarized` / `reverted`，但 raw 条目永不删除。
 
 ## 参考文件
 

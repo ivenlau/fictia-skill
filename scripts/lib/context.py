@@ -14,6 +14,15 @@ from pathlib import Path
 from .words import WRITING_NOTES_RE
 from . import project as P
 from . import source as S
+from . import notes as N
+
+
+# ---------- 用户笔记摘要 ----------
+
+
+def build_notes_summary(root: Path) -> str:
+    """读取 notes/summary.md；不存在则返回空字符串。"""
+    return N.load_summary(root)
 
 
 # ---------- YAML front-matter 工具 ----------
@@ -516,6 +525,14 @@ def assemble_writer_context(root: Path, chapter_num: int) -> str:
         parts.append(sources)
         parts.append("")
 
+    # 10. 用户笔记摘要（按需：summary.md 存在即加载）
+    notes_summary = build_notes_summary(root)
+    if notes_summary:
+        parts.append("## 10. 用户笔记摘要")
+        parts.append("")
+        parts.append(notes_summary)
+        parts.append("")
+
     return "\n".join(parts)
 
 
@@ -576,6 +593,14 @@ def assemble_editor_context(root: Path, chapter_num: int) -> str:
         parts.append("## 7. 源文本参考")
         parts.append("")
         parts.append(sources)
+        parts.append("")
+
+    # 8. 用户笔记摘要（按需）
+    notes_summary = build_notes_summary(root)
+    if notes_summary:
+        parts.append("## 8. 用户笔记摘要")
+        parts.append("")
+        parts.append(notes_summary)
         parts.append("")
 
     return "\n".join(parts)
@@ -656,6 +681,14 @@ def assemble_consistency_context(root: Path) -> str:
     parts.append("")
     parts.append(build_character_registry(root))
     parts.append("")
+
+    # 7. 用户笔记摘要（按需）
+    notes_summary = build_notes_summary(root)
+    if notes_summary:
+        parts.append("## 7. 用户笔记摘要")
+        parts.append("")
+        parts.append(notes_summary)
+        parts.append("")
 
     return "\n".join(parts)
 

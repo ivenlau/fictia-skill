@@ -39,6 +39,9 @@ project-root/
 │   │   └── ...
 │   ├── act-2/
 │   └── act-3/
+├── notes/                          # 用户笔记（贯穿整个流程，append-only）
+│   ├── raw.md                      #   原始记录（verbatim 保留）
+│   └── summary.md                  #   蒸馏后的额外上下文（按主题分类）
 └── reviews/                        # 阶段 10-11：审核
     ├── ch01-review.md              #   编辑审核
     ├── ch02-review.md
@@ -174,3 +177,5 @@ language_style: "简洁克制，偶尔锋利"
 | 章节伏笔指令 | `outline/chapters/chXX.md` → `weave_notes` |
 | 编辑评分 | `reviews/chXX-review.md` → 评分表 |
 | 一致性问题 | `reviews/consistency-report.md` → 问题列表 |
+| 用户笔记原始记录 | `notes/raw.md` |
+| 用户笔记蒸馏摘要 | `notes/summary.md`（章节写作时自动加载） |

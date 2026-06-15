@@ -119,6 +119,8 @@
 6. 本章艺术设计（`extractChapterArtDesign`）
 7. 前章摘要（`buildPreviousChapterSummary`）
 8. 前章完整正文
+9. 源文本参考（改写/仿写/续写项目）
+10. 用户笔记摘要（`notes/summary.md`，存在即加载；不存在跳过）
 
 ## 编辑审核上下文组装
 
@@ -130,6 +132,8 @@
 4. 叙事编织摘要（`buildNarrativeWeaveSummary`）
 5. 世界观速查（`buildWorldQuickRef`）
 6. 角色速查表（`buildCharacterRegistry`）
+7. 源文本参考（改写/仿写/续写项目）
+8. 用户笔记摘要（`notes/summary.md`，存在即加载）
 
 ## 一致性校验上下文组装
 
@@ -141,3 +145,5 @@
 4. 世界观速查
 5. `world/timeline.md`（完整）
 6. 角色速查表
+7. 源文本参考（改写/仿写/续写项目）
+8. 用户笔记摘要（`notes/summary.md`，存在即加载）

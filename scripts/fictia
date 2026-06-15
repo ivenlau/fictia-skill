@@ -17,6 +17,7 @@ Fictia CLI 主入口。
   verdict consistency <file> 解析一致性校验报告
   export <md|txt>         导出整本小说
   lint                    项目结构校验
+  notes <sub> [...]       用户笔记管理（add/list/show/link/revert）
 """
 
 from __future__ import annotations
@@ -43,6 +44,7 @@ from lib import lint as L
 from lib import context as C
 from lib import export as E
 from lib import source as S
+from lib import notes as N
 
 
 # ---------- 子命令实现 ----------
@@ -441,6 +443,69 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return 1 if by_level.get("error") else 0
 
 
+def cmd_notes(args: argparse.Namespace) -> int:
+    root = _resolve_root(args)
+    sub = args.sub
+
+    if sub == "add":
+        if not args.text:
+            sys.stderr.write("notes add 需要 --text 参数\n")
+            return 2
+        new_id = N.add(
+            root,
+            text=args.text,
+            source=args.source or "user",
+            stage=args.stage or "",
+            chapter=args.chapter or "",
+        )
+        print(f"✓ 已记录笔记：{new_id}")
+        return 0
+
+    if sub == "list":
+        status = args.status
+        entries = N.list_entries(root, status=status)
+        if not entries:
+            print(f"（无{' ' + status if status else ''}笔记）")
+            return 0
+        for e in entries:
+            text = e["fields"].get("原始文本", "")
+            st = e["fields"].get("状态", "?")
+            print(f"{e['id']} [{st}] {text}")
+        return 0
+
+    if sub == "show":
+        e = N.show(root, args.id)
+        if e is None:
+            sys.stderr.write(f"未找到笔记：{args.id}\n")
+            return 2
+        print(f"## {e['id']} · {e['timestamp']}")
+        for k, v in e["fields"].items():
+            print(f"- **{k}**：{v}")
+        return 0
+
+    if sub == "link":
+        if not args.to:
+            sys.stderr.write("notes link 需要 --to 参数（格式: file.md#section）\n")
+            return 2
+        ok = N.link(root, args.id, args.to)
+        if not ok:
+            sys.stderr.write(f"未找到笔记：{args.id}\n")
+            return 2
+        print(f"✓ {args.id} → {args.to}")
+        return 0
+
+    if sub == "revert":
+        ok = N.revert(root, args.id)
+        if not ok:
+            sys.stderr.write(f"未找到笔记：{args.id}\n")
+            return 2
+        print(f"✓ {args.id} 已 revert（raw 记录保留，summary 条目移除）")
+        return 0
+
+    sys.stderr.write("用法: notes add|list|show|link|revert [...]\n")
+    return 2
+
+
 # ---------- argparse 配置 ----------
 
 
@@ -538,6 +603,19 @@ def build_parser() -> argparse.ArgumentParser:
     # lint
     p_l = sub.add_parser("lint", help="项目结构校验")
     p_l.set_defaults(func=cmd_lint)
+
+    # notes
+    p_notes = sub.add_parser("notes", help="用户笔记管理（追加/浏览/标记/回滚）")
+    p_notes.add_argument("sub", choices=["add", "list", "show", "link", "revert"], help="子操作")
+    p_notes.add_argument("id", nargs="?", help="show/link/revert 用的笔记 ID（如 N001）")
+    p_notes.add_argument("--text", help="add 用的笔记文本（verbatim）")
+    p_notes.add_argument("--source", help="add 用的来源标识（如 用户修改指令 / 用户偏好陈述）")
+    p_notes.add_argument("--stage", help="add 用的阶段 key（如 chapters）")
+    p_notes.add_argument("--chapter", help="add 用的章节号（如 5）")
+    p_notes.add_argument("--status", choices=["pending", "summarized", "reverted", "all"],
+                         help="list 用的状态过滤")
+    p_notes.add_argument("--to", help="link 用的目标位置（格式: file.md#section）")
+    p_notes.set_defaults(func=cmd_notes)
 
     return parser
 
