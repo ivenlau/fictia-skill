@@ -111,7 +111,114 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 
 正式生成前，运行 `python "${FICTIA_HOME}/scripts/fictia" stage start <stage>` 将阶段标记为 `in_progress`。
 
-**扮演该 agent**，按 prompt 指令生成产出。使用中文。严格遵循输出格式。
+**按 agent prompt 指令生成产出**。使用中文。严格遵循输出格式。
+
+**两类阶段的执行方式不同**：
+- **非 subagent 阶段（1-8）**：主代理直接扮演该 agent，按 prompt 指令生成产出并写入文件。
+- **subagent 阶段（9 / 10 / 11）**：主代理不直接生成，按下方"步骤 3a：Subagent 派发协议"调用 subagent 完成。
+
+### 步骤 3a：Subagent 派发协议
+
+阶段 9（章节写作）、10（编辑审核）、11（一致性校验）由 subagent 执行。主代理负责组装 prompt、调用 Agent 工具、读取产出、触发后续流程；不直接撰写章节正文、审核报告或一致性报告。
+
+#### 通用派发流程
+
+1. **组装 subagent prompt**：按下方对应模板填入项目信息、上下文路径、章节编号等。
+2. **调用 Agent 工具**：类型 `general-purpose`，传入组装好的 prompt。
+3. **subagent 收到 prompt 后**：先 `Read` 对应 agent prompt 文件（`${FICTIA_HOME}/references/agents/<NN>-<role>.md`）获取角色定义、专业能力和输出规范；再按规范读取上下文文件并完成产出。
+4. **主代理读取产出**：从 subagent 写入的输出文件路径读取结果。
+5. **触发后续流程**：进入步骤 4 状态更新、步骤 5-7 展示与确认（subagent 阶段的具体流转见"章节写作流程"和"里程碑一致性校验"）。
+
+**单一信息源原则**：subagent 不再需要主代理重复粘贴角色定义或输出规范到 prompt 中——通过 Read agent prompt 文件保证 prompt 与 agent 定义始终一致。
+
+#### 阶段 9：章节写作派发模板
+
+- **模型**：`opus`
+- **角色文件**：`${FICTIA_HOME}/references/agents/09-chapter-writer.md`
+- **上下文来源**：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble writer --chapter N` → `.fictia-cache/chNN-writer-context.md`
+- **输出文件**：`chapters/act-{N}/ch{NN}.md`
+
+**Prompt 模板**：
+
+```
+你是 Fictia 的章节写手。
+
+请先 Read ${FICTIA_HOME}/references/agents/09-chapter-writer.md，按其中的角色定义、专业能力和输出规范完成任务。
+
+## 项目信息
+- 项目目录：{project_dir}
+- 章节编号：ch{NN}
+- 章节名：{章节名}
+- 目标字数：{目标字数} 字
+- 本章所在幕：act {N}
+
+## 上下文
+读取 .fictia-cache/ch{NN}-writer-context.md 获取本章大纲、风格指南精选、世界观速查、角色速查表、叙事配置、情感节拍、前章摘要等。
+
+## 任务
+撰写第 {N} 章正文并写入 chapters/act-{N}/ch{NN}.md。写完后统计正文字数，达标后向用户展示摘要。
+```
+
+#### 阶段 10：编辑审核派发模板
+
+- **模型**：`sonnet`（与阶段 9 的 `opus` 交叉验证）
+- **角色文件**：`${FICTIA_HOME}/references/agents/10-editor.md`
+- **上下文来源**：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble editor --chapter N` → `.fictia-cache/chNN-editor-context.md`
+- **输出文件**：`reviews/ch{NN}-review.md`
+
+**Prompt 模板**：
+
+```
+你是 Fictia 的编辑审核员。
+
+请先 Read ${FICTIA_HOME}/references/agents/10-editor.md，按其中的角色定义、专业能力和输出规范完成任务。
+
+## 项目信息
+- 项目目录：{project_dir}
+- 章节编号：ch{NN}
+- 章节名：{章节名}
+- 目标字数：{目标字数} 字
+- 本章所在幕：act {N}
+
+## 上下文
+读取 .fictia-cache/ch{NN}-editor-context.md 获取待审核章节正文、本章大纲、风格指南精选、世界观速查、角色速查表、本章叙事配置等。
+
+## 任务
+对第 {N} 章进行全面质量审核，产出 reviews/ch{NN}-review.md。写完后评估是否触发修复循环（见"章节写作流程 > 阶段 2：审核-修复循环"）。
+```
+
+#### 阶段 11：一致性校验派发模板
+
+- **模型**：`sonnet`
+- **角色文件**：`${FICTIA_HOME}/references/agents/11-consistency-checker.md`
+- **上下文来源**：`python "${FICTIA_HOME}/scripts/fictia" ctx assemble consistency` → `.fictia-cache/consistency-context.md`
+- **输出文件**：`reviews/consistency-report.md`
+
+**Prompt 模板**：
+
+```
+你是 Fictia 的一致性校验员。
+
+请先 Read ${FICTIA_HOME}/references/agents/11-consistency-checker.md，按其中的角色定义、专业能力和输出规范完成任务。
+
+## 项目信息
+- 项目目录：{project_dir}
+- 校验范围：第 {start} 章 至 第 {end} 章
+- 校验日期：{date}
+
+## 上下文
+读取 .fictia-cache/consistency-context.md 获取已写章节摘要、世界观设定、角色速查表、叙事设计、风格指南、时间线等。
+
+## 任务
+跨章节检查第 {start}-{end} 章的一致性，产出 reviews/consistency-report.md。写完后评估是否触发修复轮次（见"里程碑一致性校验 > 步骤 3：修复循环"）。
+```
+
+#### 主代理在 subagent 阶段的后续动作
+
+- **步骤 4（写入产出）**：subagent 已直接写入输出文件，主代理无需再次 Write。
+- **步骤 5（更新项目状态）**：按 subagent 阶段的具体规则更新（如阶段 9 用 `stage chapter increment`）。
+- **审核-修复循环**：由主代理根据 subagent 产出的审核/校验结果判断触发，仍由主代理调度（不嵌套 subagent）。
+- **确认**：阶段 9-10 章节维度由主代理展示摘要等待用户确认；阶段 11 里程碑维度由主代理展示报告等待确认。
 
 ### 步骤 4：写入产出文件
 
