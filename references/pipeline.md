@@ -14,7 +14,7 @@
 | 6 | `world` | 世界观构建 | genre_analysis, architecture, art_design, narrative_weave | 是 | — |
 | 7 | `characters` | 人物设计 | world, architecture, style, art_design, narrative_weave | 是 | — |
 | 8 | `story` | 故事设计 | architecture, art_design, narrative_weave, world, characters | 是 | — |
-| 9 | `chapters` | 章节写作 | style, art_design, narrative_weave, world, characters, story | 是 | — |
+| 9 | `chapters` | 章节写作 | style, art_design, narrative_weave, world, characters, story* | 是 | — |
 | 10 | `editor` | 编辑审核 | chapters, style | 是 | 是（每章强制，必须通过） |
 | 11 | `consistency` | 一致性校验 | chapters | 是 | 是（每 5 章提醒，可跳过） |
 
@@ -29,6 +29,17 @@
 | `continuation` 续写 | 分析已给文本的断点、人物状态、伏笔和语气 | 补齐后续大纲、世界规则和角色弧线 | 从断点后继续章节写作，保持风格和连续性 |
 
 `ctx assemble writer/editor/consistency` 会自动把已导入源文本节选加入缓存上下文，完整文本保存在 `sources/*.md`。
+
+## 并行模式
+
+详见 SKILL.md 的"并行模式（可选）"小节。简言之：
+
+- 默认关闭（`pipeline_settings.parallel_design = false`）；开启后 chapter-level 大纲就绪即可独立进入写作。
+- 状态字段：`pipeline_settings.parallel_design: bool` + `chapters.outlines: dict[chNN, timestamp]`
+- `is_stage_runnable("chapters")` 在并行模式下从 deps 中过滤掉 `story`，仅校验 `style / art_design / narrative_weave / world / characters` 五个设计阶段。
+- 单章可写判定见 `project.is_chapter_writable(data, chapter_num, root)`。
+
+`* 并行模式下 stage 9 不再硬依赖 stage 8。`
 
 ## 依赖图
 

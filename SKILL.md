@@ -65,6 +65,58 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
    - 阶段 9-11：继续使用写作、编辑、一致性校验流程；`ctx assemble` 会自动带入源文本参考。
 5. **合规约束**：改写/仿写时避免大段复用原文；续写时只延续用户提供文本中的上下文、人物和伏笔。
 
+## 并行模式（可选）
+
+适用场景：长篇创作中希望故事设计（stage 8）和章节写作（stage 9）同时进行——某章大纲完成后即可立即进入该章写作，不必等所有章节大纲完成。
+
+**默认关闭**，开启不影响现有流程（`story` 阶段仍可独立 confirm）。
+
+### 启用 / 关闭 / 查询
+
+```bash
+python "${FICTIA_HOME}/scripts/fictia" parallel-design on      # 开启
+python "${FICTIA_HOME}/scripts/fictia" parallel-design off     # 关闭（恢复原严格顺序）
+python "${FICTIA_HOME}/scripts/fictia" parallel-design status  # 查询
+```
+
+### 状态字段
+
+- `pipeline_settings.parallel_design: bool`（默认 `false`）—— 模式开关
+- `chapters.outlines: dict[str, timestamp]` —— 每章大纲的就绪时间戳，例如 `ch01: "2026-06-17T10:00:00Z"`
+
+老项目加载时自动回填空 map，无需手动迁移。
+
+### 启用后的工作流
+
+1. 先确认上游设计阶段：`style / art_design / narrative_weave / world / characters`（顺序按依赖图）。
+2. 进入 stage 8 故事设计，逐章产出 `outline/chapters/chNN.md`。
+3. 每章大纲写完后，运行 `python "${FICTIA_HOME}/scripts/fictia" stage chapter outline --chapter N` 标记就绪（这一步会**自动开启并行模式**）。
+4. 立即可进入该章写作：
+   - `python "${FICTIA_HOME}/scripts/fictia" stage chapter next` —— 找出下一可写章节号
+   - `python "${FICTIA_HOME}/scripts/fictia" stage chapter status` —— 查看所有章节的大纲就绪/写作/确认状态
+5. stage 8 仍可继续推进更多章节大纲，与已写章节解耦。
+
+### 章节可写判定（`is_chapter_writable`）
+
+第 N 章可写当且仅当：
+- 上游五个设计阶段（`style / art_design / narrative_weave / world / characters`）全部 `confirmed`
+- `chapters.outlines.chNN` 时间戳存在
+- `outline/chapters/chNN.md` 文件存在
+- `chapters.written < N`（章节尚未写到该号）
+
+### 不变的行为
+
+- **失效传播**：修改 stage 8 后，已写章节沿用现有 `needs_update` 机制（`PROPAGATION["story"] = ["chapters"]`），下次编辑审核时会感知到差异。
+- **编辑审核**（stage 10）、**一致性校验**（stage 11）：行为完全不变。
+- **章节计数、里程碑检查、状态面板**（`status`）：正常。
+- **串行模式**（`parallel_design=false`）：恢复为原有"全部故事设计完成后才能写作"的严格顺序，老项目零行为变化。
+
+### 与 09 章节写手 agent 的协作
+
+写手 agent 的 prompt 已增加"前置条件"段，要求运行 `stage chapter outline N` 后再写。subagent 阶段仍由主代理统一调度，主代理在调用 09 agent 前先运行 `stage chapter next` 确认目标章节号。
+
+---
+
 ## 工作流：继续流水线
 
 **用户清空上下文后重新进入时的主工作流。** 当用户调用 Fictia 且项目已存在、部分阶段已确认时，始终使用此工作流。
@@ -365,7 +417,10 @@ CLI 调用统一使用 `python "${FICTIA_HOME}/scripts/fictia" <command>`。
 
 ### 阶段 1：写作
 
-1. 确定下一章：查看 `project.yaml` 的 `chapters` 字段（`written` + 1 = 下一章编号）。如计数与实际文件不一致，先用 `python "${FICTIA_HOME}/scripts/fictia" stage chapter set --total <N> --written <N> --confirmed <N>` 修正。
+1. 确定下一章：
+   - **并行模式下**：运行 `python "${FICTIA_HOME}/scripts/fictia" stage chapter next`，CLI 会综合考虑上游设计阶段 confirmed、大纲文件存在、chapters.outlines 时间戳等条件给出下一可写章节号。
+   - **串行模式下**：查看 `project.yaml` 的 `chapters` 字段（`written` + 1 = 下一章编号）。
+   - 如计数与实际文件不一致，先用 `python "${FICTIA_HOME}/scripts/fictia" stage chapter set --total <N> --written <N> --confirmed <N>` 修正。
 2. 读取下一章大纲：`outline/chapters/chXX.md`
 3. 概述本章内容：场景、角色、事件、weave_notes 要求。
 4. 检查 weave_notes：需要埋设/推进的伏笔、需要推进的支线。

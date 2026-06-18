@@ -3,6 +3,7 @@
 """
 
 from __future__ import annotations
+from pathlib import Path
 from . import project as P
 
 
@@ -20,8 +21,11 @@ def _symbol(status: str) -> str:
     return SYMBOLS.get(status, "[?]")
 
 
-def render_status_panel(data: dict) -> str:
-    """渲染 SKILL.md 中定义的状态面板。"""
+def render_status_panel(data: dict, root: Path | None = None) -> str:
+    """渲染 SKILL.md 中定义的状态面板。
+
+    - root: 可选项目根路径；提供时，并行模式开启后会显示"下一可写章节"。
+    """
     name = data.get("name", "?")
     author = data.get("author", "?")
     genre = data.get("genre", "?")
@@ -31,6 +35,7 @@ def render_status_panel(data: dict) -> str:
     chapters = data.get("chapters") or {}
     written = int(chapters.get("written") or 0)
     total = int(chapters.get("total") or 0)
+    parallel = P.is_parallel_design_enabled(data)
 
     # 阶段两列布局
     rows: list[str] = []
@@ -56,6 +61,16 @@ def render_status_panel(data: dict) -> str:
         num, key, name_cn = nxt
         nxt_line = f"│  ▶ 下一步: 阶段 {num} · {name_cn:<22}        │"
 
+    # 并行模式提示行
+    parallel_line = f"│  ⚡并行模式: {'开启' if parallel else '关闭':<10}                         │"
+    extras: list[str] = [parallel_line]
+    if parallel:
+        nxt_ch = P.next_chapter_to_write(data, root)
+        if nxt_ch is not None:
+            extras.append(f"│  ▶ 下一可写章节: ch{nxt_ch:02d}                              │")
+        else:
+            extras.append(f"│  ▶ 下一可写章节: 无（已就绪大纲均已写完）              │")
+
     panel = f"""╭────────────────────────────────────────────────╮
 │              F I C T I A                       │
 │          AI 小说创作流水线                      │
@@ -68,6 +83,7 @@ def render_status_panel(data: dict) -> str:
 {chr(10).join(rows)}
 │  ✓已确认 ▸进行中 ◇待确认 !需更新 空格未开始    │
 ├────────────────────────────────────────────────┤
+{chr(10).join(extras)}
 {nxt_line}
 ╰────────────────────────────────────────────────╯"""
     return panel

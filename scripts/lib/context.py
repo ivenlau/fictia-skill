@@ -477,7 +477,12 @@ def assemble_writer_context(root: Path, chapter_num: int) -> str:
         parts.append(outline_path.read_text(encoding="utf-8"))
         parts.append("")
     else:
-        parts.append(f"## 1. 章节大纲\n\n（{outline_path} 不存在）\n")
+        rel = outline_path.relative_to(root)
+        parts.append(
+            f"## 1. 章节大纲\n\n"
+            f"（未找到大纲：{rel}。"
+            f"如需写本章，请先用 `fictia stage chapter outline {chapter_num}` 标记就绪）\n"
+        )
 
     # 2. 风格指南（本阶段精选）
     parts.append("## 2. 风格指南（本阶段精选）")

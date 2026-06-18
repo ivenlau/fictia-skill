@@ -73,6 +73,17 @@ STATUS_CONFIRMED = "confirmed"
 STATUS_NEEDS_UPDATE = "needs_update"
 STATUS_FAILED = "failed"
 
+# 上游"设计"阶段：并行模式下，章节可写只需这些全部 confirmed（story 不再是硬门）
+DESIGN_STAGES: list[str] = [
+    "style",
+    "art_design",
+    "narrative_weave",
+    "world",
+    "characters",
+]
+
+PIPELINE_SETTINGS_DEFAULT: dict[str, bool] = {"parallel_design": False}
+
 # 各阶段产出文件（用于 init 占位）
 STAGE_OUTPUTS: dict[str, list[str]] = {
     "genre_analysis": ["genre-analysis.md"],
@@ -149,6 +160,21 @@ def load_project(root: Path) -> dict:
                 "outputFiles": [],
             }
     data["pipeline"] = norm_pipeline
+
+    # 规范化 pipeline_settings（并行模式开关）
+    settings = data.get("pipeline_settings") or {}
+    data["pipeline_settings"] = {
+        "parallel_design": bool(settings.get("parallel_design", False)),
+    }
+
+    # 规范化 chapters（增加 outlines 字段，per-chapter 大纲就绪时间戳）
+    chapters = data.get("chapters") or {}
+    data["chapters"] = {
+        "total": int(chapters.get("total") or 0),
+        "written": int(chapters.get("written") or 0),
+        "confirmed": int(chapters.get("confirmed") or 0),
+        "outlines": dict(chapters.get("outlines") or {}),
+    }
     return data
 
 
@@ -180,10 +206,16 @@ def set_stage_status(data: dict, stage: str, status: str) -> None:
 
 
 def is_stage_runnable(data: dict, stage: str) -> bool:
-    """判断阶段是否可执行：所有依赖已 confirmed，且自身未开始或需更新。"""
+    """判断阶段是否可执行：所有依赖已 confirmed，且自身未开始或需更新。
+
+    并行模式下：chapters 阶段的 `story` 依赖被跳过，
+    改为只需 style/art_design/narrative_weave/world/characters 五个设计阶段 confirmed。
+    """
     if stage not in STAGE_NAME:
         return False
     deps = STAGE_DEPS.get(stage, [])
+    if stage == "chapters" and is_parallel_design_enabled(data):
+        deps = [d for d in deps if d != "story"]
     for d in deps:
         if get_stage_status(data, d) != STATUS_CONFIRMED:
             return False
@@ -235,6 +267,78 @@ def get_milestone(data: dict) -> tuple[bool, int]:
     if confirmed % 5 == 0:
         return (True, confirmed)
     return (False, next_ms)
+
+
+# ---------- 并行模式（parallel design）----------
+
+
+def is_parallel_design_enabled(data: dict) -> bool:
+    """返回是否启用了并行模式（故事设计与章节写作可同时进行）。"""
+    return bool(data.get("pipeline_settings", {}).get("parallel_design", False))
+
+
+def set_parallel_design(data: dict, enabled: bool) -> None:
+    """显式设置并行模式开关。"""
+    settings = data.setdefault("pipeline_settings", {"parallel_design": False})
+    settings["parallel_design"] = bool(enabled)
+
+
+def is_chapter_outlined(data: dict, chapter_num: int) -> bool:
+    """第 N 章大纲是否已显式标记就绪。"""
+    cn = f"ch{chapter_num:02d}"
+    return cn in (data.get("chapters", {}).get("outlines") or {})
+
+
+def mark_chapter_outline(data: dict, chapter_num: int) -> None:
+    """标记第 N 章大纲就绪。同步开启 parallel_design。"""
+    cn = f"ch{chapter_num:02d}"
+    chapters = data.setdefault(
+        "chapters", {"total": 0, "written": 0, "confirmed": 0, "outlines": {}}
+    )
+    chapters.setdefault("outlines", {})[cn] = _utcnow_str()
+    # 标记大纲就绪时，自动开启并行模式
+    set_parallel_design(data, True)
+
+
+def is_chapter_writable(
+    data: dict, chapter_num: int, root: Path | None = None
+) -> bool:
+    """第 N 章是否可写：
+
+    - 上游设计 stage 全部 confirmed（style/art_design/narrative_weave/world/characters）
+    - 大纲已显式标记 ready（chapters.outlines[chNN] 存在）
+    - 若提供 root：大纲文件存在
+    - 章节尚未写到 N（即 chapter_num > written）
+    """
+    # 上游设计 stage 全部 confirmed
+    for s in DESIGN_STAGES:
+        if get_stage_status(data, s) != STATUS_CONFIRMED:
+            return False
+    # 大纲标记 ready
+    if not is_chapter_outlined(data, chapter_num):
+        return False
+    # 大纲文件存在（若提供了 root）
+    if root is not None:
+        outline = root / "outline" / "chapters" / f"ch{chapter_num:02d}.md"
+        if not outline.is_file():
+            return False
+    # 章节尚未写到该号
+    written = int((data.get("chapters", {}).get("written") or 0))
+    if chapter_num <= written:
+        return False
+    return True
+
+
+def next_chapter_to_write(data: dict, root: Path | None = None) -> int | None:
+    """返回下一可写章节号（按编号递增）。若全部已写或无就绪大纲则返回 None。"""
+    chapters = data.get("chapters") or {}
+    total = int(chapters.get("total") or 0)
+    written = int(chapters.get("written") or 0)
+    upper = total if total > 0 else (written + 100)
+    for n in range(1, upper + 1):
+        if is_chapter_writable(data, n, root):
+            return n
+    return None
 
 
 def increment_chapters(data: dict, count: int = 1) -> None:

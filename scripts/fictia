@@ -139,7 +139,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 def cmd_status(args: argparse.Namespace) -> int:
     root = _resolve_root(args)
     data = P.load_project(root)
-    print(render.render_status_panel(data))
+    print(render.render_status_panel(data, root))
     return 0
 
 
@@ -161,7 +161,12 @@ def cmd_stage(args: argparse.Namespace) -> int:
         return 0
 
     if sub == "chapter":
-        # 用法: fictia stage chapter increment / fictia stage chapter set --total N --written N --confirmed N
+        # 用法:
+        #   fictia stage chapter increment
+        #   fictia stage chapter set --total N --written N --confirmed N
+        #   fictia stage chapter outline --chapter N
+        #   fictia stage chapter next
+        #   fictia stage chapter status
         action = args.stage
         if action == "increment":
             P.increment_chapters(data, 1)
@@ -170,7 +175,7 @@ def cmd_stage(args: argparse.Namespace) -> int:
             print(f"chapters: written={ch.get('written')}, confirmed={ch.get('confirmed')}")
             return 0
         if action == "set":
-            ch = data.setdefault("chapters", {"total": 0, "written": 0, "confirmed": 0})
+            ch = data.setdefault("chapters", {"total": 0, "written": 0, "confirmed": 0, "outlines": {}})
             for k in ("total", "written", "confirmed"):
                 v = getattr(args, k, None)
                 if v is not None:
@@ -178,7 +183,69 @@ def cmd_stage(args: argparse.Namespace) -> int:
             P.save_project(root, data)
             print(f"chapters: {ch}")
             return 0
-        sys.stderr.write("用法: stage chapter increment | stage chapter set --total N --written N --confirmed N\n")
+        if action == "outline":
+            n_str = getattr(args, "chapter", None)
+            if not n_str:
+                sys.stderr.write("用法: stage chapter outline --chapter <N>\n")
+                return 2
+            n = int(n_str)
+            outline_path = root / "outline" / "chapters" / f"ch{n:02d}.md"
+            if not outline_path.is_file():
+                sys.stderr.write(
+                    f"错误：{outline_path.relative_to(root)} 不存在；请先生成该章大纲\n"
+                )
+                return 2
+            missing = [
+                s for s in P.DESIGN_STAGES
+                if P.get_stage_status(data, s) != P.STATUS_CONFIRMED
+            ]
+            if missing:
+                sys.stderr.write(
+                    f"错误：上游设计阶段未确认：{', '.join(missing)}\n"
+                    "请先完成 style / art_design / narrative_weave / world / characters 阶段\n"
+                )
+                return 2
+            P.mark_chapter_outline(data, n)
+            P.save_project(root, data)
+            print(f"✓ ch{n:02d} 大纲已标记就绪（并行模式已自动开启）")
+            print(f"  → 用 `fictia stage chapter next` 查看下一可写章节")
+            return 0
+        if action == "next":
+            nxt = P.next_chapter_to_write(data, root)
+            if nxt is None:
+                if not P.is_parallel_design_enabled(data):
+                    print("并行模式未开启（用 `fictia parallel-design on` 启用）")
+                    print("或保持串行模式：先完成 story 阶段全部章节大纲")
+                else:
+                    print("无下一可写章节（所有已就绪大纲均已写完，或上游设计未全部确认）")
+                return 1
+            print(f"下一可写章节: ch{nxt:02d}")
+            return 0
+        if action == "status":
+            ch = data.get("chapters", {})
+            outlines_map = ch.get("outlines") or {}
+            written = int(ch.get("written") or 0)
+            confirmed = int(ch.get("confirmed") or 0)
+            total = int(ch.get("total") or 0)
+            lines = [
+                f"大纲就绪: {len(outlines_map)} 章",
+                f"已写: {written} 章",
+                f"已确认: {confirmed} 章",
+            ]
+            if total:
+                lines.append(f"计划: {total} 章")
+            if outlines_map:
+                lines.append("---")
+                for cn in sorted(outlines_map.keys()):
+                    n = int(cn[2:])
+                    marker = "✓" if n <= written else "·"
+                    lines.append(f"  {marker} {cn} 大纲就绪于 {outlines_map[cn]}")
+            print("\n".join(lines))
+            return 0
+        sys.stderr.write(
+            "用法: stage chapter increment | set --total N --written N --confirmed N\n"
+            "     | outline --chapter N | next | status\n"
+        )
         return 2
 
     if sub == "show":
@@ -269,6 +336,33 @@ def cmd_consistency(args: argparse.Namespace) -> int:
     P.save_project(root, data)
     print(f"consistency: confirmed at chapter {ch}")
     return 0
+
+
+def cmd_parallel_design(args: argparse.Namespace) -> int:
+    """并行模式开关（默认关闭）。"""
+    root = _resolve_root(args)
+    data = P.load_project(root)
+    action = args.action
+    if action == "on":
+        P.set_parallel_design(data, True)
+        P.save_project(root, data)
+        print("✓ 并行模式已开启")
+        print("  → 故事设计完成的章节可立即进入章节写作")
+        print("  → 用 `fictia stage chapter outline <N>` 标记大纲就绪")
+        print("  → 用 `fictia stage chapter next` 查看下一可写章节")
+        return 0
+    if action == "off":
+        P.set_parallel_design(data, False)
+        P.save_project(root, data)
+        print("✓ 并行模式已关闭")
+        print("  → 恢复'全部故事设计完成后才能写作'的严格顺序")
+        return 0
+    if action == "status":
+        enabled = P.is_parallel_design_enabled(data)
+        print(f"并行模式: {'开启' if enabled else '关闭'}")
+        return 0
+    sys.stderr.write("用法: parallel-design on|off|status\n")
+    return 2
 
 
 def cmd_source(args: argparse.Namespace) -> int:
@@ -542,7 +636,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_stage.add_argument("--total", help="chapter set 用的总章节数")
     p_stage.add_argument("--written", help="chapter set 用的已写数")
     p_stage.add_argument("--confirmed", help="chapter set 用的已确认数")
+    p_stage.add_argument("--chapter", "-c", help="chapter outline 用的章节号")
     p_stage.set_defaults(func=cmd_stage, stage_action=None)
+
+    # parallel-design
+    p_pd = sub.add_parser("parallel-design", help="并行模式开关（故事设计 + 章节写作可同时进行；默认关闭）")
+    p_pd.add_argument("action", choices=["on", "off", "status"], help="on=启用 off=关闭 status=查询")
+    p_pd.set_defaults(func=cmd_parallel_design)
 
     # words
     p_words = sub.add_parser("words", help="统计字数")

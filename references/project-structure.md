@@ -89,10 +89,16 @@ pipeline:
     status: "not_started"
   # ... 每个阶段一条
 
+pipeline_settings:
+  parallel_design: false          # 启用并行模式：故事设计与章节写作可同时进行（见 SKILL.md）
+
 chapters:
   total: 30
   written: 5
   confirmed: 3
+  outlines:                       # 每章大纲的就绪时间戳（并行模式下使用）
+    ch01: "2026-06-17T10:00:00Z"
+    ch02: "2026-06-17T11:30:00Z"
 
 consistency:
   last_check_chapter: 5

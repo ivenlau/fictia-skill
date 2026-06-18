@@ -108,4 +108,41 @@ def lint_project(root: Path) -> list[dict]:
                     "path": str(md.relative_to(root)),
                 })
 
+    # 并行模式相关检查
+    parallel = P.is_parallel_design_enabled(data)
+    chapters = data.get("chapters") or {}
+    outlines_map = chapters.get("outlines") or {}
+    written = int(chapters.get("written") or 0)
+
+    # 1) 大纲标记 ready 但文件不存在 → error
+    for cn in outlines_map:
+        outline_p = root / "outline" / "chapters" / f"{cn}.md"
+        if not outline_p.is_file():
+            issues.append({
+                "level": "error",
+                "code": "outline-marker-file-missing",
+                "message": f"大纲已标记就绪但文件不存在: {cn}",
+                "path": str(outline_p.relative_to(root)),
+            })
+
+    # 2) 并行模式开启但 story 阶段仍未开始 → info
+    if parallel and P.get_stage_status(data, "story") == P.STATUS_NOT_STARTED:
+        issues.append({
+            "level": "info",
+            "code": "parallel-without-story",
+            "message": "并行模式已开启但 story 阶段未开始；建议先写至少一章大纲再用 `fictia stage chapter outline N` 标记就绪",
+            "path": "project.yaml",
+        })
+
+    # 3) 章节已写但大纲未标记 ready（数据异常）→ info
+    for n in range(1, written + 1):
+        cn = f"ch{n:02d}"
+        if cn not in outlines_map:
+            issues.append({
+                "level": "info",
+                "code": "chapter-no-outline-marker",
+                "message": f"章节 {cn} 已写但大纲未标记 ready（数据异常，可能由串行流程遗留）",
+                "path": f"chapters/{cn}.md",
+            })
+
     return issues
