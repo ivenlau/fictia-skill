@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import glob as _glob
 from pathlib import Path
-from .words import WRITING_NOTES_RE
+from .words import WRITING_NOTES_RE, strip_writing_notes
 from . import project as P
 from . import source as S
 from . import notes as N
@@ -435,7 +435,7 @@ def build_art_design_summary(root: Path) -> str:
 
 
 def build_previous_chapter_summary(root: Path, chapter_num: int) -> str:
-    """读取前一章的 写作备注 + 完整正文。"""
+    """读取前一章的 写作备注 段（无备注时回退到末尾 300 字）。"""
     if chapter_num <= 1:
         return "（无前章）"
     prev_num = chapter_num - 1
@@ -520,13 +520,14 @@ def assemble_writer_context(root: Path, chapter_num: int) -> str:
     parts.append(build_previous_chapter_summary(root, chapter_num))
     parts.append("")
 
-    # 8. 前章完整正文
+    # 8. 前章完整正文（已剥离写作备注，避免与第 7 节重复）
     if chapter_num > 1:
         prev_files = list((root / "chapters").rglob(f"ch{chapter_num - 1:02d}.md"))
         if prev_files:
+            prev_text = strip_writing_notes(prev_files[0].read_text(encoding="utf-8"))
             parts.append("## 8. 前章完整正文")
             parts.append("")
-            parts.append(prev_files[0].read_text(encoding="utf-8"))
+            parts.append(prev_text.rstrip())
             parts.append("")
 
     sources = S.build_source_context(root)
