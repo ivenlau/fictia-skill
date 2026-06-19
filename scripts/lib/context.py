@@ -708,18 +708,12 @@ def assemble_consistency_context(root: Path) -> str:
 
 
 def parse_review_verdict(text: str) -> dict:
-    """从编辑审核报告中解析：综合评分、严重问题数、一般问题数。"""
-    grade = None
-    # 兼容多种格式：综合评分：A / 综合评分**：A / **综合评分**：A / **综合评分**：A
-    for pat in [
-        r"\*\*?综合评分\*\*?[：:]\s*\*?\*?([A-D])",
-        r"综合评分\*\*?[：:]\s*\*?\*?([A-D])",
-        r"评分[：:]\s*\*?\*?([A-D])",
-    ]:
-        m = re.search(pat, text)
-        if m:
-            grade = m.group(1)
-            break
+    """从编辑审核报告中解析：综合评分、严重问题数、一般问题数。
+
+    只在「总体评价」section（文件开头到第一个 ``## `` 或 ``### `` 标题之前）
+    内匹配评分，避免误抓修复日志/评分细项表里的字母。
+    """
+    grade = _extract_grade(text)
     severe_count = _count_table_rows_after_header(text, "严重问题")
     normal_count = _count_table_rows_after_header(text, "一般问题")
     return {
@@ -730,14 +724,58 @@ def parse_review_verdict(text: str) -> dict:
     }
 
 
+def _extract_grade(text: str) -> str | None:
+    """从报告中解析综合评分字母（A-D）。
+
+    只匹配包含「综合评分」关键词的形态（``**综合评分**：A`` 等）。
+    这些关键词只出现在「总体评价」section 中，不会误抓修复日志
+    或「评分细项」表里的 ``评分`` 列头。
+    """
+    for pat in [
+        r"\*\*?综合评分\*\*?[：:]\s*\*?\*?([A-D])",
+        r"综合评分\*\*?[：:]\s*\*?\*?([A-D])",
+    ]:
+        m = re.search(pat, text)
+        if m:
+            return m.group(1)
+    return None
+
+
+_NONE_MARKER_RE = re.compile(r"^(无|（无）|\(无\)|无问题|无重大问题|无明显问题|无特别|暂无|—|-)\s*[。.！!]?\s*$")
+
+
 def _count_table_rows_after_header(text: str, header: str) -> int:
-    """在 `### 严重问题` 标题之后的第一个表格中，统计数据行（| 1 | ...）。"""
-    m = re.search(rf"###\s*{re.escape(header)}[^\n]*\n", text)
+    """在 ``### 严重问题`` 标题之后、下一个同级或更高级标题之前的范围内，
+    统计数据行数。
+
+    关键修复点：
+      1. **section 边界**：只在「严重问题」section 内部找表格，不跨过下一个
+         ``### `` / ``## `` 标题。否则会把后续 section（如「细节问题」「审核修复日志」）
+         的表格行数误算成本 section 的问题数。
+      2. **「无」占位识别**：section 体内只有 ``无`` / ``（无）`` / ``暂无``
+         等占位文字（无表格）时返回 0。
+    """
+    # 找到 section 标题（包括 ``### 严重问题（必须修改）`` 等带括号的形式）
+    # 注意：f-string 中 ``#{{1,6}}`` 必须双花括号转义，否则 ``#{1,6}`` 会被当成
+    # f-string 表达式解析为元组 ``(1, 6)``。
+    m = re.search(rf"^(#{{1,6}})\s*{re.escape(header)}[^\n]*\n", text, re.MULTILINE)
     if not m:
         return 0
-    # 找之后的第一个表格
-    after = text[m.end():]
-    tbl_m = re.search(r"((?:^\|.*\|\s*\n)+)", after, re.MULTILINE)
+    marker = m.group(1)
+    start = m.end()
+
+    # 找下一个同级或更高级标题（同一 marker 或更少 #）
+    next_section = re.search(rf"^#{{1,{len(marker)}}}\s+", text[start:], re.MULTILINE)
+    end = start + next_section.start() if next_section else len(text)
+    section_body = text[start:end]
+
+    # section 体内的第一段非空文字：若是「无」占位，直接返回 0
+    first_line = next((ln.strip() for ln in section_body.splitlines() if ln.strip()), "")
+    if _NONE_MARKER_RE.match(first_line):
+        return 0
+
+    # 在 section 体内找第一个表格
+    tbl_m = re.search(r"((?:^\|.*\|\s*\n)+)", section_body, re.MULTILINE)
     if not tbl_m:
         return 0
     tbl = tbl_m.group(1)
