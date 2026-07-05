@@ -39,16 +39,78 @@ fictia words <file>...         统计字数（自动剥离写作备注）
 fictia judge <actual> <target> 字数判定
 fictia milestone               检查章节里程碑（每 5 章）
 fictia consistency confirm     记录一致性校验通过的章节
+fictia consistency collect     自动汇总伏笔/支线/角色状态追踪表 → .fictia-cache/
 fictia source import <file>    导入改写/仿写/续写源文本（epub/txt/md）
 fictia source list             列出已导入源文本
 fictia ctx <program> [...]     上下文压缩与组装
 fictia verdict review <file>   解析编辑审核报告
 fictia verdict consistency <file> 解析一致性校验报告
 fictia export <md|txt>         导出整本
-fictia lint                    项目结构校验
+fictia lint                    项目结构校验（v1 兼容）
+fictia lint <stage> <file>     单文件 v2 schema lint（字数预算 + 污染检测）
 ```
 
 所有子命令都支持 `--project / -p` 显式指定项目目录；不指定则从当前目录向上查找 `project.yaml`。
+
+## v2 schema lint（单文件模式）
+
+`fictia lint <stage> <file>` 检查单个产出文件是否符合 v2 schema：
+
+- **front-matter 必填字段**：缺失 → warning
+- **字数预算**：超出 ±20% → warning
+- **数量上限**：严重问题 ≤ 3 条等 → 超出 → warning
+- **计数字段一致性**：`severe_count` 与实际表行数不一致 → warning
+- **污染检测**：`feedback_*` / `project_*` / `note_*` / `符合 chXX` / `分工如下` 等 internal token → warning
+- **front-matter 缺失/格式错**：→ error（exit 1）
+
+支持的 stage key（也可传 file_budget key 如 `character_heavy`）：
+
+| stage key | 用途 | 典型文件 |
+|-----------|------|---------|
+| `genre_analysis` | 题材分析 | genre-analysis.md |
+| `architecture` | 架构设计 | blueprint.md |
+| `style` | 风格指南 | style-guide.md |
+| `style_samples` | 风格示例库 | style-samples.md |
+| `art_design` | 艺术设计 | art-design.md |
+| `narrative_weave` | 叙事编织 | narrative-weave.md |
+| `world` | 世界观设定 | world/setting.md |
+| `world_timeline` | 世界观时间线 | world/timeline.md |
+| `characters` | 重角色 | characters/protagonist.md |
+| `character_light` | 轻角色 | characters/supporting/*.md |
+| `character_relationships` | 角色关系 | characters/relationships.md |
+| `story` | 章节大纲 | outline/chapters/chNN.md |
+| `outline_act` | 幕设计 | outline/act-N.md |
+| `chapters` | 章节正文 | chapters/act-N/chNN.md |
+| `editor` | 编辑审核 | reviews/chNN-review.md |
+| `consistency` | 一致性报告 | reviews/consistency-report.md |
+
+```bash
+fictia lint chapters chapters/act-3/ch86.md
+fictia lint editor reviews/ch86-review.md
+fictia lint consistency reviews/consistency-report.md
+```
+
+软 warn 语义：所有超限问题以 warning 输出，exit 0；仅 front-matter 缺失/未知 stage 才 exit 1。
+
+## consistency collect（自动汇总）
+
+`fictia consistency collect` 扫所有章节 front-matter，与 narrative-weave.md 计划对照，生成：
+
+- 章节摘要表（标题 / 字数 / 埋设 / 回收 / 推进 / 首次出场）
+- 伏笔追踪表（计划 + 实际状态 + 出现章节；不在计划的标"未在计划"）
+- 支线追踪表（计划 + 实际出现章节）
+- 角色首次出场登记
+- 各章写作备注原文
+
+产物写入 `.fictia-cache/consistency-context.md`，stage 11 agent 直接读 + 标问题。
+`fictia ctx assemble consistency` 会自动嵌入此文件。
+
+```bash
+fictia consistency collect
+# → .fictia-cache/consistency-context.md
+```
+
+v1 章节（无 v2 front-matter）会显示空字段——这是预期行为，agent 应基于写作备注原文校验。
 
 ## source 子命令详解
 

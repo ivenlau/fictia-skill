@@ -295,11 +295,23 @@ def extract_style_stage_notes(root: Path, act: str) -> str:
 
 
 def build_world_quickref(root: Path) -> str:
-    """合并 world/setting.md + world/rules.md 为 1000-2000 字速查。"""
+    """合并 world/setting.md (+ world/rules.md) 为 1000-2000 字速查。
+
+    v2 schema：setting.md 已合并 rules.md，不再读 rules.md。
+    v1 schema：保留 rules.md 读取以兼容旧项目。
+    """
     parts: list[str] = ["## 世界观速查", ""]
 
     setting = root / "world" / "setting.md"
     rules = root / "world" / "rules.md"
+
+    # 判断 schema 版本
+    setting_version = 1
+    if setting.is_file():
+        st_text = setting.read_text(encoding="utf-8")
+        st_fm, _ = parse_frontmatter(st_text)
+        if str(st_fm.get("schema_version", "1")) == "2":
+            setting_version = 2
 
     if setting.is_file():
         text = setting.read_text(encoding="utf-8")
@@ -330,15 +342,17 @@ def build_world_quickref(root: Path) -> str:
         parts.append("（world/setting.md 不存在）")
         parts.append("")
 
-    if rules.is_file():
-        text = rules.read_text(encoding="utf-8")
-        parts.append("### 力量体系与战斗规则（rules.md 摘要）")
-        parts.append("")
-        parts.append(text[:1500])
-        parts.append("")
-    else:
-        parts.append("（world/rules.md 不存在）")
-        parts.append("")
+    # 仅 v1 才读 rules.md（v2 已合并到 setting.md）
+    if setting_version == 1:
+        if rules.is_file():
+            text = rules.read_text(encoding="utf-8")
+            parts.append("### 力量体系与战斗规则（rules.md 摘要）")
+            parts.append("")
+            parts.append(text[:1500])
+            parts.append("")
+        else:
+            parts.append("（world/rules.md 不存在）")
+            parts.append("")
 
     return "\n".join(parts)
 
@@ -622,34 +636,51 @@ def assemble_editor_context(root: Path, chapter_num: int) -> str:
 
 
 def assemble_consistency_context(root: Path) -> str:
-    """组装一致性校验上下文：所有章节写作备注 + 最新章节完整 + 各速查。"""
+    """组装一致性校验上下文。
+
+    v2 流程：优先使用 `fictia consistency collect` 生成的 .fictia-cache/consistency-context.md
+    作为主体（已自动汇总伏笔/支线/角色状态追踪表），再附加各速查与最新章节正文。
+
+    回退（无 cache）：旧逻辑——读所有章节写作备注 + 最新章节完整正文。
+    """
     parts: list[str] = ["# 一致性校验上下文", ""]
+
+    cache = root / ".fictia-cache" / "consistency-context.md"
+    cache_available = cache.is_file()
 
     chapters_dir = root / "chapters"
     ch_files = sorted(chapters_dir.rglob("ch*.md")) if chapters_dir.is_dir() else []
 
-    # 1. 所有章节：先前章节仅 写作备注，最新章节完整正文
-    parts.append("## 1. 各章摘要")
-    parts.append("")
-    if not ch_files:
-        parts.append("（无章节文件）")
+    # 1. 自动汇总（v2）或各章摘要（v1/回退）
+    if cache_available:
+        parts.append("## 1. 自动汇总（来自 .fictia-cache/consistency-context.md）")
+        parts.append("")
+        parts.append(cache.read_text(encoding="utf-8").strip())
         parts.append("")
     else:
+        parts.append("## 1. 各章摘要")
+        parts.append("")
+        if not ch_files:
+            parts.append("（无章节文件）")
+            parts.append("")
+        else:
+            for p in ch_files[:-1]:
+                text = p.read_text(encoding="utf-8")
+                m = WRITING_NOTES_RE.search(text)
+                if m:
+                    parts.append(f"### {p.name}")
+                    parts.append("")
+                    parts.append(text[m.start() :].strip())
+                    parts.append("")
+                else:
+                    parts.append(f"### {p.name}（无写作备注）")
+                    parts.append("")
+                    parts.append(text[-300:])
+                    parts.append("")
+
+    # 1.5 最新章节完整正文
+    if ch_files:
         latest = ch_files[-1]
-        for p in ch_files[:-1]:
-            text = p.read_text(encoding="utf-8")
-            m = WRITING_NOTES_RE.search(text)
-            if m:
-                parts.append(f"### {p.name}")
-                parts.append("")
-                parts.append(text[m.start() :].strip())
-                parts.append("")
-            else:
-                parts.append(f"### {p.name}（无写作备注）")
-                parts.append("")
-                parts.append(text[-300:])
-                parts.append("")
-        # 完整正文
         parts.append(f"## 1.5 最新章节完整正文（{latest.name}）")
         parts.append("")
         parts.append(latest.read_text(encoding="utf-8"))

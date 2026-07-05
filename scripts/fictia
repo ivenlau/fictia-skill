@@ -45,6 +45,7 @@ from lib import context as C
 from lib import export as E
 from lib import source as S
 from lib import notes as N
+from lib import consistency as CC
 
 
 # ---------- 子命令实现 ----------
@@ -325,17 +326,37 @@ def cmd_milestone(args: argparse.Namespace) -> int:
 def cmd_consistency(args: argparse.Namespace) -> int:
     root = _resolve_root(args)
     data = P.load_project(root)
-    if args.sub != "confirm":
-        sys.stderr.write("用法: consistency confirm --chapter <N>\n")
-        return 2
-    ch = int(args.chapter)
-    consistency = data.setdefault("consistency", {})
-    consistency["last_check_chapter"] = ch
-    consistency["last_check_date"] = P._utcnow_str()
-    consistency["status"] = P.STATUS_CONFIRMED
-    P.save_project(root, data)
-    print(f"consistency: confirmed at chapter {ch}")
-    return 0
+    if args.sub == "confirm":
+        if not args.chapter:
+            sys.stderr.write("consistency confirm 需要 --chapter <N>\n")
+            return 2
+        ch = int(args.chapter)
+        consistency = data.setdefault("consistency", {})
+        consistency["last_check_chapter"] = ch
+        consistency["last_check_date"] = P._utcnow_str()
+        consistency["status"] = P.STATUS_CONFIRMED
+        P.save_project(root, data)
+        print(f"consistency: confirmed at chapter {ch}")
+        return 0
+    if args.sub == "collect":
+        # 自动汇总：扫所有章节 front-matter，生成伏笔/支线/角色状态追踪表
+        cache_dir = root / ".fictia-cache"
+        cache_dir.mkdir(exist_ok=True)
+        out = cache_dir / "consistency-context.md"
+        text = CC.collect(root)
+        out.write_text(text, encoding="utf-8")
+        # 统计
+        ch_count = text.count("### ch")
+        f_count = text.count("| F") + text.count("| F0")  # 简单计数
+        s_count = text.count("| S")
+        print(f"✓ 已生成一致性校验上下文：{out}")
+        print(f"  → 章节摘要：{ch_count} 章")
+        print(f"  → 伏笔追踪：见文件中表格")
+        print(f"  → 支线追踪：见文件中表格")
+        print("  下一步: 启动 stage 11 agent（一致性校验）读此文件 + 标问题")
+        return 0
+    sys.stderr.write("用法: consistency confirm --chapter <N> | consistency collect\n")
+    return 2
 
 
 def cmd_parallel_design(args: argparse.Namespace) -> int:
@@ -517,6 +538,28 @@ def cmd_export(args: argparse.Namespace) -> int:
 
 
 def cmd_lint(args: argparse.Namespace) -> int:
+    # 单文件模式：fictia lint <stage> <file>
+    stage = getattr(args, "stage", None)
+    file_path = getattr(args, "file", None)
+    if stage and file_path:
+        issues = L.lint_file(stage, Path(file_path))
+        if not issues:
+            print(f"✓ {file_path} 通过 v2 schema lint")
+            return 0
+        by_level: dict[str, list[dict]] = {"error": [], "warning": []}
+        for i in issues:
+            by_level.setdefault(i["level"], []).append(i)
+        for level in ("error", "warning"):
+            items = by_level.get(level, [])
+            if not items:
+                continue
+            icon = {"error": "✗", "warning": "⚠"}[level]
+            print(f"{icon} {level.upper()}（{len(items)}）")
+            for i in items:
+                print(f"  [{i['code']}] {i['message']}")
+                print(f"    → {i['path']}")
+        return 1 if by_level.get("error") else 0
+    # 项目结构模式（默认）
     root = _resolve_root(args)
     issues = L.lint_project(root)
     if not issues:
@@ -660,9 +703,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ms.set_defaults(func=cmd_milestone)
 
     # consistency
-    p_consistency = sub.add_parser("consistency", help="一致性校验状态管理")
-    p_consistency.add_argument("sub", choices=["confirm"], help="子操作")
-    p_consistency.add_argument("--chapter", required=True, help="已通过一致性校验的章节号")
+    p_consistency = sub.add_parser("consistency", help="一致性校验状态管理 + 自动汇总")
+    p_consistency.add_argument("sub", choices=["confirm", "collect"], help="子操作：confirm=标记通过 / collect=自动汇总追踪表")
+    p_consistency.add_argument("--chapter", help="confirm 用的章节号")
     p_consistency.set_defaults(func=cmd_consistency)
 
     # source
@@ -701,7 +744,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_e.set_defaults(func=cmd_export)
 
     # lint
-    p_l = sub.add_parser("lint", help="项目结构校验")
+    p_l = sub.add_parser("lint", help="项目结构校验 / 单文件 v2 schema lint")
+    p_l.add_argument("stage", nargs="?", help="单文件模式：stage key（chapters / editor / consistency / style / ...）")
+    p_l.add_argument("file", nargs="?", help="单文件模式：目标文件路径")
     p_l.set_defaults(func=cmd_lint)
 
     # notes
