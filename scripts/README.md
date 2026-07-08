@@ -42,6 +42,7 @@ fictia consistency confirm     记录一致性校验通过的章节
 fictia source import <file>    导入改写/仿写/续写源文本（epub/txt/md）
 fictia source list             列出已导入源文本
 fictia ctx <program> [...]     上下文压缩与组装
+fictia vector <sub> [...]      向量检索管理（zvec + embedding，可选 RAG）
 fictia verdict review <file>   解析编辑审核报告
 fictia verdict consistency <file> 解析一致性校验报告
 fictia export <md|txt>         导出整本
@@ -122,6 +123,55 @@ fictia stage ready genre_analysis      # 产出已写入，等待用户确认
 fictia stage confirm genre_analysis    # 用户确认后
 fictia status                         # 题材分析应为 [✓]
 ```
+
+## 向量检索（可选 RAG 能力）
+
+适用场景：长篇创作需要跨章节语义检索（如"找出所有'林远受伤'的场景"）。
+
+### 安装
+
+| 模式 | 命令 | 适用 |
+|---|---|---|
+| stub（默认） | 无 | 仅跑通工具链，无语义 |
+| local | `pip install sentence-transformers` + `export FICTIA_EMBEDDING=local` | 本地离线、中文 SOTA、首次下载 ~2.3GB 模型 |
+| api | `pip install httpx` + `export ZHIPUAI_API_KEY=xxx` + `export FICTIA_EMBEDDING=api` | 云端、不想装模型 |
+
+向量库 zvec 单独安装：`pip install zvec`。
+
+### 索引
+
+```bash
+fictia vector index-chapter --chapter N    # 手动索引单章
+fictia vector index-notes                  # 索引笔记摘要
+fictia vector index-source                 # 索引源文本
+fictia vector index-all                    # 索引全部
+```
+
+> **自动索引**：执行 `fictia stage chapter outline --chapter N` 与 `fictia consistency confirm --chapter N` 时会自动索引对应章节，无需手动调用。
+
+### 检索
+
+```bash
+fictia vector search "<query>" --top-k 5
+fictia ctx semantic-search "<query>" --chapter N  # 作为 ctx 输出（markdown 格式）
+```
+
+### 管理
+
+```bash
+fictia vector status                        # 显示当前 embedding model + dim + 各 collection chunk 数
+fictia vector clear --collection chapters   # 清空指定 collection
+fictia vector clear --yes                   # 清空全部（需 --yes 确认）
+```
+
+### Embedding 切换
+
+- `local` ↔ `api` 都是 1024-dim，**互相切换不需要重建索引**
+- `stub` → `local|api` 必须 `fictia vector clear && index-all` 重建
+
+### 数据位置
+
+向量数据存放在 `<project_root>/.fictia/zvec/`，已在 `.gitignore` 中排除。
 
 ## 设计原则
 

@@ -47,7 +47,38 @@ from lib import source as S
 from lib import notes as N
 
 
+# 向量检索（RAG）—— 软依赖，缺包时其它命令不受影响
+try:
+    from lib import vector as V  # type: ignore
+    _VECTOR_OK = True
+except ImportError:  # pragma: no cover
+    V = None  # type: ignore
+    _VECTOR_OK = False
+
+
 # ---------- 子命令实现 ----------
+
+
+def _auto_index_after_stage(args_root: Path, chapter: int, kind: str) -> None:
+    """自动索引钩子：被 stage/confirm 流程调用。
+
+    kind: "outline" 或 "consistency"
+    失败仅打警告，不抛错——索引是辅助能力，不阻塞主流程。
+    """
+    if not _VECTOR_OK:
+        return  # lib.vector 导入失败，安静跳过
+    try:
+        store = V.open_store_with_default_provider(args_root)
+        if kind == "outline":
+            n = store.index_chapter_outline(chapter, force=False)
+        elif kind == "consistency":
+            n = store.index_chapter(chapter, force=True)
+        else:
+            return
+        if n > 0:
+            print(f"✓ auto-indexed: {kind} chapter {chapter} → {n} chunks")
+    except Exception as e:
+        print(f"⚠ auto-index failed ({kind} chapter {chapter}): {e}", file=sys.stderr)
 
 
 def _resolve_root(args: argparse.Namespace) -> Path:
@@ -209,6 +240,8 @@ def cmd_stage(args: argparse.Namespace) -> int:
             P.save_project(root, data)
             print(f"✓ ch{n:02d} 大纲已标记就绪（并行模式已自动开启）")
             print(f"  → 用 `fictia stage chapter next` 查看下一可写章节")
+            # 自动索引钩子 A：outline 就绪 → 索引大纲
+            _auto_index_after_stage(root, n, "outline")
             return 0
         if action == "next":
             nxt = P.next_chapter_to_write(data, root)
@@ -335,6 +368,8 @@ def cmd_consistency(args: argparse.Namespace) -> int:
     consistency["status"] = P.STATUS_CONFIRMED
     P.save_project(root, data)
     print(f"consistency: confirmed at chapter {ch}")
+    # 自动索引钩子 B：consistency confirm → 索引完整章节正文
+    _auto_index_after_stage(root, ch, "consistency")
     return 0
 
 
@@ -432,6 +467,37 @@ def cmd_ctx(args: argparse.Namespace) -> int:
             sys.stderr.write("style-act 需要幕名：fictia ctx style-act <act-1/2/3/prologue/epilogue>\n")
             return 2
         print(C.extract_style_stage_notes(root, act))
+    elif program == "semantic-search":
+        # semantic-search 用 vector 库；缺包或缺依赖时给清晰错误
+        if not _VECTOR_OK:
+            sys.stderr.write("错误：lib.vector 导入失败，无法做语义检索。\n")
+            return 2
+        query = args.query or raw
+        if not query:
+            sys.stderr.write("semantic-search 需要查询语句：fictia ctx semantic-search \"<query>\" [--top-k 8]\n")
+            return 2
+        try:
+            store = V.open_store_with_default_provider(root)
+            hits = store.search(query, top_k=args.top_k, collection=args.collection)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if not _VECTOR_OK or not hasattr(C, "build_semantic_search"):
+            # 退化为简单 list 输出（Step 6 之前的过渡）
+            if not hits:
+                print("(无命中)")
+            else:
+                for i, h in enumerate(hits, 1):
+                    ch = h.metadata.get("chapter", "-")
+                    print(f"[{i}] {h.collection} chapter={ch} score={h.score:.4f}")
+                    snippet = h.text.replace("\n", " ").strip()
+                    if len(snippet) > 200:
+                        snippet = snippet[:200] + "..."
+                    print(f"    > {snippet}")
+            return 0
+        # 正常路径：build_semantic_search 输出 markdown
+        print(C.build_semantic_search(root, query, top_k=args.top_k, collection=args.collection))
+        return 0
     elif program == "weave-summary":
         print(C.build_narrative_weave_summary(root))
     elif program == "art-summary":
@@ -600,6 +666,136 @@ def cmd_notes(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_vector(args: argparse.Namespace) -> int:
+    """向量检索管理（RAG）。"""
+    if not _VECTOR_OK:
+        sys.stderr.write("错误：lib.vector 导入失败。请检查 scripts/lib/vector.py 是否存在。\n")
+        return 2
+    try:
+        root = _resolve_root(args)
+    except SystemExit:
+        return 2
+
+    sub_cmd = args.vec_cmd
+    try:
+        store = V.open_store_with_default_provider(root)
+    except V.VectorError as e:
+        sys.stderr.write(f"错误：{e}\n")
+        return 2
+    except Exception as e:
+        sys.stderr.write(f"错误：初始化向量存储失败：{e}\n")
+        return 2
+
+    if sub_cmd == "status":
+        s = store.status()
+        print(f"embedding: {s['embedding_model']} (dim={s['vector_dim']})")
+        for name, count in s["collections"].items():
+            print(f"  {name}: {count} chunks")
+        print(f"  total: {s['total_chunks']} chunks")
+        return 0
+
+    if sub_cmd == "index-chapter":
+        ch_str = args.chapter
+        if not ch_str:
+            sys.stderr.write("用法: vector index-chapter --chapter <N> [--force]\n")
+            return 2
+        ch = int(ch_str)
+        try:
+            n = store.index_chapter(ch, force=args.force)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ chapter {ch}: indexed {n} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "index-notes":
+        try:
+            n = store.index_notes(force=args.force)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if n == 0:
+            print("(notes/summary.md 不存在，跳过)")
+        else:
+            print(f"✓ notes: indexed {n} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "index-source":
+        try:
+            n = store.index_sources(force=args.force)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if n == 0:
+            print("(sources/ 目录不存在或为空，跳过)")
+        else:
+            print(f"✓ sources: indexed {n} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "index-all":
+        total = 0
+        for label, fn in [
+            ("notes", store.index_notes),
+            ("sources", store.index_sources),
+        ]:
+            try:
+                total += fn(force=args.force)
+            except V.VectorError as e:
+                sys.stderr.write(f"⚠ {label}: {e}\n")
+        # 索引所有已写章节
+        for ch in range(1, 200):
+            p = V.chapter_file_path(root, ch)
+            if p:
+                try:
+                    total += store.index_chapter(ch, force=args.force)
+                except V.VectorError as e:
+                    sys.stderr.write(f"⚠ chapter {ch}: {e}\n")
+            else:
+                # 找不到 act-X/chNN.md 时停止（章节号是连续的）
+                if ch > 1:
+                    break
+        print(f"✓ index-all: total {total} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "search":
+        query = args.query
+        if not query:
+            sys.stderr.write("用法: vector search --query \"<query>\" [--top-k N] [--collection X]\n")
+            return 2
+        try:
+            hits = store.search(query, top_k=args.top_k, collection=args.collection)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if not hits:
+            print("(无命中)")
+            return 0
+        for i, h in enumerate(hits, 1):
+            ch = h.metadata.get("chapter", "-")
+            print(f"[{i}] {h.collection} chapter={ch} score={h.score:.4f} id={h.id}")
+            snippet = h.text.replace("\n", " ").strip()
+            if len(snippet) > 200:
+                snippet = snippet[:200] + "..."
+            print(f"    > {snippet}")
+        return 0
+
+    if sub_cmd == "clear":
+        if not args.yes:
+            target = args.collection or "ALL"
+            print(f"确认清空向量数据（{target}）？加 --yes 跳过确认。")
+            return 1
+        try:
+            cleared = store.clear(collection=args.collection)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ cleared: {', '.join(cleared)}")
+        return 0
+
+    sys.stderr.write("用法: vector index-chapter|index-notes|index-source|index-all|search|status|clear [...]\n")
+    return 2
+
+
 # ---------- argparse 配置 ----------
 
 
@@ -679,15 +875,35 @@ def build_parser() -> argparse.ArgumentParser:
                        choices=["character-registry", "character-card", "world-quickref",
                                 "chapter-weave", "chapter-art", "style-act",
                                 "weave-summary", "art-summary", "previous-chapter",
-                                "chapter-act", "assemble"],
+                                "chapter-act", "assemble", "semantic-search"],
                        help="ctx 程序")
     p_ctx.add_argument("arg", nargs="?",
-                       help="位置参数（含义随 program 变：角色名/章节号/幕名/assemble role）")
+                       help="位置参数（含义随 program 变：角色名/章节号/幕名/assemble role/semantic-search 查询）")
     p_ctx.add_argument("--name", help="character-card 用的角色名")
     p_ctx.add_argument("--chapter", "-c", help="chapter-weave/art/previous-chapter/act/assemble 用的章节号")
     p_ctx.add_argument("--act", help="style-act 用的幕名（act-1/act-2/act-3/act-prologue/act-epilogue）")
     p_ctx.add_argument("--role", choices=["writer", "editor", "consistency"], help="assemble 用的角色")
+    p_ctx.add_argument("--query", help="semantic-search 用的查询语句（也可作位置参数）")
+    p_ctx.add_argument("--top-k", type=int, default=8, help="semantic-search 命中数（默认 8）")
+    p_ctx.add_argument("--collection", choices=["chapters", "notes", "sources"],
+                       help="semantic-search 限定 collection")
     p_ctx.set_defaults(func=cmd_ctx)
+
+    # vector（RAG / 跨章节语义检索）
+    p_vec = sub.add_parser("vector", help="向量检索管理（zvec + embedding）")
+    p_vec.add_argument("vec_cmd",
+                       choices=["index-chapter", "index-notes", "index-source", "index-all",
+                                "search", "status", "clear"],
+                       help="子操作")
+    p_vec.add_argument("--chapter", "-c", help="index-chapter 用的章节号")
+    p_vec.add_argument("--slug", help="index-source 用的源文本 slug（不带 .md）")
+    p_vec.add_argument("--force", action="store_true", help="强制重建（删除旧条目后重新索引）")
+    p_vec.add_argument("--query", help="search 用的查询语句")
+    p_vec.add_argument("--top-k", type=int, default=8, help="search 命中数（默认 8）")
+    p_vec.add_argument("--collection", choices=["chapters", "notes", "sources"],
+                       help="search/clear 限定 collection")
+    p_vec.add_argument("--yes", action="store_true", help="clear 不加确认（用于批量脚本）")
+    p_vec.set_defaults(func=cmd_vector)
 
     # verdict
     p_v = sub.add_parser("verdict", help="解析审核/校验报告")

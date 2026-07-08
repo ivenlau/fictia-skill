@@ -786,3 +786,90 @@ def _count_table_rows_after_header(text: str, header: str) -> int:
     # 跳过表头与分隔行
     data_lines = [l for l in lines[2:] if not re.match(r"^\|[\s\-:|]+\|\s*$", l)]
     return len(data_lines)
+
+
+# ---------- 语义检索（需 lib.vector + zvec） ----------
+
+
+def build_semantic_search(
+    root: Path,
+    query: str,
+    top_k: int = 8,
+    collection: str | None = None,
+) -> str:
+    """把语义检索结果格式化为 markdown 片段，供 LLM 上下文使用。
+
+    返回格式：
+        ## 语义检索结果
+
+        **查询**：<query>
+        **命中**：<N> 条
+
+        ### 1. [chapters] 第 3 章（chunk 12，score 0.87）
+        > <chunk text>
+
+        ### 2. [notes] summary（chunk 1，score 0.81）
+        > <chunk text>
+
+    zvec 未装、collection 为空、或无命中时返回空字符串。
+    """
+    try:
+        import importlib
+        V = importlib.import_module("lib.vector")
+    except ImportError:
+        return ""
+
+    try:
+        store = V.open_store_with_default_provider(root)
+    except V.VectorError:
+        return ""
+
+    try:
+        hits = store.search(query, top_k=top_k, collection=collection)
+    except V.VectorError:
+        return ""
+
+    if not hits:
+        return ""
+
+    lines: list[str] = ["## 语义检索结果", ""]
+    lines.append(f"**查询**：{query}")
+    lines.append(f"**命中**：{len(hits)} 条")
+    lines.append("")
+
+    for i, h in enumerate(hits, 1):
+        # 标题：collection + 来源信息
+        src_parts: list[str] = []
+        if h.collection == "chapters":
+            ch = h.metadata.get("chapter")
+            if ch is not None:
+                src_parts.append(f"第 {ch} 章")
+        elif h.collection == "notes":
+            nid = h.metadata.get("note_id", "summary")
+            src_parts.append(f"note={nid}")
+        elif h.collection == "sources":
+            slug = h.metadata.get("source_slug", "?")
+            src_parts.append(f"source={slug}")
+
+        idx_info = ""
+        # 尝试从 h.id 解析 chunk_index（id 格式 {prefix}{NNNN}）
+        if h.id and len(h.id) >= 4:
+            tail = h.id[-4:]
+            if tail.isdigit():
+                idx_info = f"chunk {int(tail)}"
+
+        score_info = f"score {h.score:.4f}"
+
+        meta_str = "，".join(p for p in [", ".join(src_parts), idx_info, score_info] if p)
+        lines.append(f"### {i}. [{h.collection}] {meta_str}")
+
+        # chunk 文本用 blockquote 包起
+        text = h.text.replace("\n", " ").strip()
+        if len(text) > 300:
+            text = text[:300] + "..."
+        # blockquote：每行加 "> "
+        for line in text.splitlines() or [text]:
+            lines.append(f"> {line}")
+        lines.append("")
+
+    return "\n".join(lines).rstrip() + "\n"

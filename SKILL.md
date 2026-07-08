@@ -117,6 +117,60 @@ python "${FICTIA_HOME}/scripts/fictia" parallel-design status  # 查询
 
 ---
 
+## 向量检索（可选 RAG 能力）
+
+适用场景：长篇创作需要跨章节语义检索（如"找出所有'林远受伤'的场景"、"林远与苏瑶的所有互动"、"凡涉及北域的伏笔"）。
+
+### 启用
+
+1. 安装 zvec：`pip install zvec`
+2. 选择 embedding 模式（二选一）：
+
+   **本地模式**（BGE-M3，中文 SOTA，免费离线，需 ~2.3GB 模型）：
+   ```bash
+   pip install sentence-transformers
+   export FICTIA_EMBEDDING=local
+   ```
+
+   **API 模式**（智谱 embedding-2，云端，需 API key）：
+   ```bash
+   pip install httpx
+   export ZHIPUAI_API_KEY=your_key_here
+   export FICTIA_EMBEDDING=api
+   ```
+
+3. **无需手动索引** —— `fictia stage chapter outline --chapter N` 与 `fictia consistency confirm --chapter N` 会自动入库
+4. 检索：`fictia vector search "<query>" --top-k 8`
+
+### 集成到 agent 上下文
+
+```bash
+fictia ctx semantic-search "林远在北域受伤" --chapter 16 --top-k 8
+```
+
+把检索结果格式化为 markdown，可粘贴到 09-chapter-writer / 10-editor / 11-consistency-checker agent 的上下文中。
+
+### Embedding 切换
+
+- `stub`（默认）：hash-based 256-dim，无语义，仅跑通工具链
+- `local`：BGE-M3 本地，1024-dim
+- `api`：智谱 embedding-2 云端，1024-dim
+- `local` ↔ `api` 都是 1024-dim，切换**不需要重建索引**
+- `stub` → `local|api` 必须 `fictia vector clear && index-all` 重建
+
+### 笔记与源文本
+
+笔记（`notes/summary.md`）与源文本（`sources/*.md`）需手动索引：
+
+```bash
+fictia vector index-notes
+fictia vector index-source
+```
+
+向量数据存放在 `<project>/.fictia/zvec/`，已加入 `.gitignore`。
+
+---
+
 ## 头脑风暴模式
 
 适用场景：当主代理即将执行的**任务或工作流**属于以下类型时，应在执行前询问用户是否开启头脑风暴模式，以更系统的方式对齐目标、约束和方案：

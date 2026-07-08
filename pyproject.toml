@@ -1,0 +1,24 @@
+[project]
+name = "fictia-skill"
+version = "0.2.0"
+description = "Fictia AI 小说创作流水线"
+requires-python = ">=3.8"
+dependencies = [
+  "zvec>=0.1,<1.0",
+]
+
+[project.optional-dependencies]
+local = ["sentence-transformers>=2.2"]
+api = ["httpx>=0.25"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["scripts"]
+include = ["mcp_server*"]
+
+# 说明：本 pyproject 仅声明 zvec 依赖与可选 extras（local/api embedding）。
+# scripts/lib 不打入 wheel，CLI 入口仍是 `python scripts/fictia`。
+# zvec 版本 pin 留宽（<1.0）以适配快速迭代。

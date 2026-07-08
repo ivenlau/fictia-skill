@@ -9,3 +9,4 @@ __pycache__/
 
 # Fictia cache
 .fictia-cache/
+.fictia/
