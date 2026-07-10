@@ -66,6 +66,11 @@ def require_zvec() -> None:
         )
 
 
+def _doc_id(doc) -> str:
+    """从 zvec Doc 对象或 dict 中提取 id。"""
+    return doc.id if not isinstance(doc, dict) else doc.get("id", "")
+
+
 # --------------------------------------------------------------------------- #
 # Dataclass
 # --------------------------------------------------------------------------- #
@@ -287,10 +292,32 @@ def sources_dir(project_root: Path) -> Path:
 
 
 def _make_collection_schema(name: str, dim: int):
-    """构造 zvec collection schema。"""
+    """构造 zvec collection schema。
+
+    每个 collection 都包含：
+      - vec: 向量字段
+      - text: 全文检索字段
+      - 各 collection 特有的 metadata 字段（nullable）
+    """
     require_zvec()
+    # 通用字段
+    fields = [
+        _ZVEC.FieldSchema("text", _ZVEC.DataType.STRING,
+                          index_param=_ZVEC.FtsIndexParam()),
+    ]
+    # collection 特有 metadata
+    if name == "chapters":
+        fields.append(_ZVEC.FieldSchema("chapter", _ZVEC.DataType.INT64))
+        fields.append(_ZVEC.FieldSchema("path", _ZVEC.DataType.STRING))
+    elif name == "notes":
+        fields.append(_ZVEC.FieldSchema("note_id", _ZVEC.DataType.STRING))
+    elif name == "sources":
+        fields.append(_ZVEC.FieldSchema("source_slug", _ZVEC.DataType.STRING))
+        fields.append(_ZVEC.FieldSchema("workflow", _ZVEC.DataType.STRING, nullable=True))
+
     return _ZVEC.CollectionSchema(
         name=name,
+        fields=fields,
         vectors=_ZVEC.VectorSchema("vec", _ZVEC.DataType.VECTOR_FP32, dim),
     )
 
@@ -328,13 +355,15 @@ class VectorStore:
 
     # ---- collection lifecycle ----
 
-    def _ensure(self, name: str):
+    def _ensure(self, name: str, read_only: bool = False):
         """懒创建/打开 collection。"""
         path = self.base / name
         if path.is_dir():
-            col = _ZVEC.create_and_open(path=str(path), schema=_make_collection_schema(name, self.dim))
+            opt = _ZVEC.CollectionOption(read_only=read_only)
+            col = _ZVEC.open(path=str(path), option=opt)
         else:
-            col = _ZVEC.create_and_open(path=str(path), schema=_make_collection_schema(name, self.dim))
+            schema = _make_collection_schema(name, self.dim)
+            col = _ZVEC.create_and_open(path=str(path), schema=schema)
         return col
 
     def _col(self, name: str):
@@ -373,12 +402,12 @@ class VectorStore:
                 _ZVEC.VectorQuery("vec", vector=[0.0] * self.dim),
                 topk=10000,
             )
-            hits = [h for h in hits if h.get("id", "").startswith(prefix)]
+            hits = [h for h in hits if _doc_id(h).startswith(prefix)]
 
         deleted = 0
         for h in hits:
             try:
-                col.delete([h["id"]])
+                col.delete([_doc_id(h)])
                 deleted += 1
             except Exception:
                 pass
@@ -416,8 +445,8 @@ class VectorStore:
         text = path.read_text(encoding="utf-8")
         chunks = chunk_chapter(text, chapter=chapter, path=str(path.relative_to(root_path)))
         if force:
-            self._delete_ids_starting_with("chapters", f"ch{chapter:02d}:")
-        return self.index_chunks("chapters", chunks, id_prefix=f"ch{chapter:02d}:")
+            self._delete_ids_starting_with("chapters", f"ch{chapter:02d}_")
+        return self.index_chunks("chapters", chunks, id_prefix=f"ch{chapter:02d}_")
 
     def index_chapter_outline(self, chapter: int, force: bool = False) -> int:
         """索引指定章节的大纲（outline/chapters/chNN.md）。"""
@@ -428,8 +457,8 @@ class VectorStore:
         text = path.read_text(encoding="utf-8")
         chunks = chunk_chapter(text, chapter=chapter, path=str(path.relative_to(root_path)))
         if force:
-            self._delete_ids_starting_with("chapters", f"outline{chapter:02d}:")
-        return self.index_chunks("chapters", chunks, id_prefix=f"outline{chapter:02d}:")
+            self._delete_ids_starting_with("chapters", f"outline{chapter:02d}_")
+        return self.index_chunks("chapters", chunks, id_prefix=f"outline{chapter:02d}_")
 
     def index_notes(self, force: bool = False) -> int:
         """索引 notes/summary.md。"""
@@ -440,8 +469,8 @@ class VectorStore:
         text = path.read_text(encoding="utf-8")
         chunks = chunk_notes(text, note_id="summary")
         if force:
-            self._delete_ids_starting_with("notes", "notes:")
-        return self.index_chunks("notes", chunks, id_prefix="notes:")
+            self._delete_ids_starting_with("notes", "notes_")
+        return self.index_chunks("notes", chunks, id_prefix="notes_")
 
     def index_sources(self, force: bool = False) -> int:
         """索引 sources/*.md（每个文件作为一个 source_slug）。"""
@@ -455,8 +484,8 @@ class VectorStore:
             slug = f.stem
             chunks = chunk_source(text, slug=slug)
             if force:
-                self._delete_ids_starting_with("sources", f"sources:{slug}:")
-            total += self.index_chunks("sources", chunks, id_prefix=f"sources:{slug}:")
+                self._delete_ids_starting_with("sources", f"sources_{slug}_")
+            total += self.index_chunks("sources", chunks, id_prefix=f"sources_{slug}_")
         return total
 
     # ---- search ----
@@ -484,13 +513,24 @@ class VectorStore:
             except Exception as e:
                 raise VectorError(f"zvec query failed on {name}: {e}") from e
             for r in results:
+                # zvec 0.5 returns Doc objects; older versions may return dicts
+                if isinstance(r, dict):
+                    rid = r.get("id", "")
+                    rtext = r.get("text", "")
+                    rscore = float(r.get("score", 0.0))
+                    rmeta = {k: v for k, v in r.items() if k not in ("id", "score", "text", "vec")}
+                else:
+                    rid = r.id
+                    rtext = r.fields.get("text", "") if r.fields else ""
+                    rscore = float(r.score) if r.score is not None else 0.0
+                    rmeta = {k: v for k, v in (r.fields or {}).items() if k != "text"}
                 hits.append(
                     Hit(
-                        id=r.get("id", ""),
+                        id=rid,
                         collection=name,
-                        text=r.get("text", ""),
-                        score=float(r.get("score", 0.0)),
-                        metadata={k: v for k, v in r.items() if k not in ("id", "score", "text", "vec")},
+                        text=rtext,
+                        score=rscore,
+                        metadata=rmeta,
                     )
                 )
         # 跨 collection 时按 score 降序截断
@@ -564,8 +604,15 @@ class VectorStore:
 # Convenience: 单例构造
 # --------------------------------------------------------------------------- #
 
+_STORE_CACHE: dict[str, VectorStore] = {}
+
 
 def open_store_with_default_provider(project_root: Path, mode: Optional[str] = None) -> VectorStore:
-    """用 get_provider() 默认 provider 打开 VectorStore。"""
+    """用 get_provider() 默认 provider 打开 VectorStore（同进程缓存，避免重复加锁）。"""
+    cache_key = str(project_root.resolve())
+    if cache_key in _STORE_CACHE:
+        return _STORE_CACHE[cache_key]
     provider = get_provider(mode)
-    return open_store(project_root, provider)
+    store = open_store(project_root, provider)
+    _STORE_CACHE[cache_key] = store
+    return store
