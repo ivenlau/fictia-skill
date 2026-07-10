@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from lib import context as C  # noqa: E402
+from lib.vector import close_all_stores  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -29,37 +30,40 @@ from lib import context as C  # noqa: E402
 # --------------------------------------------------------------------------- #
 
 
+def _tmpdir():
+    """创建临时目录，忽略 zvec rocksdb 文件锁导致的清理错误。"""
+    import tempfile
+    return tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+
+
 def test_returns_empty_when_no_project() -> None:
     """无 project.yaml / 无 zvec → 空字符串，不抛错。"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
+    with _tmpdir() as tmp:
         out = C.build_semantic_search(Path(tmp), "林远在北域受伤", top_k=5)
         # zvec 缺 + 无项目根 → 返回空字符串
         assert out == ""
+        close_all_stores()
 
 
 def test_returns_empty_when_zvec_missing() -> None:
     """明确无 zvec → 空字符串。"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
+    from lib import vector as V
+    with _tmpdir() as tmp:
         tmp_path = Path(tmp)
-        # 临时把 zvec 模块从 sys.modules 移除以模拟"未装"
-        saved = sys.modules.get("zvec")
-        sys.modules["zvec"] = None  # type: ignore
+        # 临时把 _ZVEC 置为 None 模拟"未装"
+        saved_zvec = V._ZVEC
+        V._ZVEC = None
         try:
             out = C.build_semantic_search(tmp_path, "test query", top_k=5)
             assert out == ""
         finally:
-            if saved is not None:
-                sys.modules["zvec"] = saved
-            else:
-                sys.modules.pop("zvec", None)
+            V._ZVEC = saved_zvec
+            close_all_stores()
 
 
 def test_returns_empty_when_lib_vector_missing() -> None:
     """lib.vector 不可用时返回空字符串。"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
+    with _tmpdir() as tmp:
         tmp_path = Path(tmp)
         # 把 lib.vector 从 sys.modules 临时移除
         saved = sys.modules.pop("lib.vector", None)
@@ -73,6 +77,7 @@ def test_returns_empty_when_lib_vector_missing() -> None:
                 sys.modules["lib.vector"] = saved
             # 再次 reload 恢复
             importlib.reload(C)
+            close_all_stores()
 
 
 # --------------------------------------------------------------------------- #
@@ -82,8 +87,7 @@ def test_returns_empty_when_lib_vector_missing() -> None:
 
 def test_format_includes_required_sections() -> None:
     """模拟命中时输出包含 ## 语义检索结果 / **查询** / **命中** 等关键标记。"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
+    with _tmpdir() as tmp:
         tmp_path = Path(tmp)
         # 构造 mock hit
         from dataclasses import dataclass
@@ -138,8 +142,7 @@ def test_format_includes_required_sections() -> None:
 
 def test_top_k_limit() -> None:
     """top_k=1 → 最多 1 条命中。"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
+    with _tmpdir() as tmp:
         tmp_path = Path(tmp)
         from dataclasses import dataclass
 
@@ -181,8 +184,7 @@ def test_top_k_limit() -> None:
 
 def test_empty_hits_returns_empty() -> None:
     """无命中时返回空字符串。"""
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmp:
+    with _tmpdir() as tmp:
         tmp_path = Path(tmp)
         class MockStore:
             def __init__(self, root, provider): pass

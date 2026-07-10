@@ -353,6 +353,16 @@ class VectorStore:
         for name in COLLECTIONS:
             self._cache[name] = self._ensure(name)
 
+    def close(self) -> None:
+        """释放所有 collection 连接，解除文件锁。"""
+        import gc
+        # 逐个删除引用，让 C++ 析构函数释放文件锁
+        keys = list(self._cache.keys())
+        for k in keys:
+            col = self._cache.pop(k)
+            del col
+        gc.collect()
+
     # ---- collection lifecycle ----
 
     def _ensure(self, name: str, read_only: bool = False):
@@ -616,3 +626,12 @@ def open_store_with_default_provider(project_root: Path, mode: Optional[str] = N
     store = open_store(project_root, provider)
     _STORE_CACHE[cache_key] = store
     return store
+
+
+def close_all_stores() -> None:
+    """释放所有缓存的 VectorStore（用于测试清理 / 临时目录场景）。"""
+    import gc
+    for store in _STORE_CACHE.values():
+        store.close()
+    _STORE_CACHE.clear()
+    gc.collect()
