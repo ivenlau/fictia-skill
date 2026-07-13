@@ -82,7 +82,7 @@ DESIGN_STAGES: list[str] = [
     "characters",
 ]
 
-PIPELINE_SETTINGS_DEFAULT: dict[str, bool] = {"parallel_design": False}
+PIPELINE_SETTINGS_DEFAULT: dict[str, bool] = {"parallel_design": False, "brainstorm_mode": True}
 
 # 各阶段产出文件（用于 init 占位）
 STAGE_OUTPUTS: dict[str, list[str]] = {
@@ -161,10 +161,11 @@ def load_project(root: Path) -> dict:
             }
     data["pipeline"] = norm_pipeline
 
-    # 规范化 pipeline_settings（并行模式开关）
+    # 规范化 pipeline_settings
     settings = data.get("pipeline_settings") or {}
     data["pipeline_settings"] = {
         "parallel_design": bool(settings.get("parallel_design", False)),
+        "brainstorm_mode": bool(settings.get("brainstorm_mode", True)),
     }
 
     # 规范化 chapters（增加 outlines 字段，per-chapter 大纲就绪时间戳）
@@ -279,8 +280,22 @@ def is_parallel_design_enabled(data: dict) -> bool:
 
 def set_parallel_design(data: dict, enabled: bool) -> None:
     """显式设置并行模式开关。"""
-    settings = data.setdefault("pipeline_settings", {"parallel_design": False})
+    settings = data.setdefault("pipeline_settings", {"parallel_design": False, "brainstorm_mode": True})
     settings["parallel_design"] = bool(enabled)
+
+
+# ---------- 头脑风暴模式 ----------
+
+
+def is_brainstorm_mode_enabled(data: dict) -> bool:
+    """返回是否启用了头脑风暴模式（设计阶段默认开启）。"""
+    return bool(data.get("pipeline_settings", {}).get("brainstorm_mode", True))
+
+
+def set_brainstorm_mode(data: dict, enabled: bool) -> None:
+    """显式设置头脑风暴模式开关。"""
+    settings = data.setdefault("pipeline_settings", {"parallel_design": False, "brainstorm_mode": True})
+    settings["brainstorm_mode"] = bool(enabled)
 
 
 def is_chapter_outlined(data: dict, chapter_num: int) -> bool:

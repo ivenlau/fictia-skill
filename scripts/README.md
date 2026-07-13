@@ -43,6 +43,8 @@ fictia source import <file>    导入改写/仿写/续写源文本（epub/txt/md
 fictia source list             列出已导入源文本
 fictia ctx <program> [...]     上下文压缩与组装
 fictia vector <sub> [...]      向量检索管理（zvec + embedding，可选 RAG）
+fictia entity <sub> [...]      动态写作空间 — 实体管理（8 类有状态实体）
+fictia brainstorm-mode <action> 头脑风暴模式开关（on/off/status，默认开启）
 fictia verdict review <file>   解析编辑审核报告
 fictia verdict consistency <file> 解析一致性校验报告
 fictia export <md|txt>         导出整本

@@ -91,6 +91,7 @@ pipeline:
 
 pipeline_settings:
   parallel_design: false          # 启用并行模式：故事设计与章节写作可同时进行（见 SKILL.md）
+  brainstorm_mode: true           # 头脑风暴模式：设计阶段默认进入探索→共创→产出三段式
 
 chapters:
   total: 30

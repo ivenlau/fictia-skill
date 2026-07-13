@@ -416,6 +416,29 @@ def cmd_parallel_design(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_brainstorm_mode(args: argparse.Namespace) -> int:
+    """头脑风暴模式开关（默认开启）。"""
+    root = _resolve_root(args)
+    data = P.load_project(root)
+    action = args.action
+    if action == "on":
+        P.set_brainstorm_mode(data, True)
+        P.save_project(root, data)
+        print("✓ 头脑风暴模式已开启（设计阶段默认进入探索→共创→产出三段式）")
+        return 0
+    if action == "off":
+        P.set_brainstorm_mode(data, False)
+        P.save_project(root, data)
+        print("✓ 头脑风暴模式已关闭（设计阶段直接产出）")
+        return 0
+    if action == "status":
+        enabled = P.is_brainstorm_mode_enabled(data)
+        print(f"头脑风暴模式: {'开启' if enabled else '关闭'}")
+        return 0
+    sys.stderr.write("用法: brainstorm-mode on|off|status\n")
+    return 2
+
+
 def cmd_source(args: argparse.Namespace) -> int:
     root = _resolve_root(args)
     if args.sub == "import":
@@ -1046,6 +1069,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_pd = sub.add_parser("parallel-design", help="并行模式开关（故事设计 + 章节写作可同时进行；默认关闭）")
     p_pd.add_argument("action", choices=["on", "off", "status"], help="on=启用 off=关闭 status=查询")
     p_pd.set_defaults(func=cmd_parallel_design)
+
+    # brainstorm-mode
+    p_bm = sub.add_parser("brainstorm-mode", help="头脑风暴模式开关（设计阶段探索→共创→产出；默认开启）")
+    p_bm.add_argument("action", choices=["on", "off", "status"], help="on=开启 off=关闭 status=查询")
+    p_bm.set_defaults(func=cmd_brainstorm_mode)
 
     # words
     p_words = sub.add_parser("words", help="统计字数")
