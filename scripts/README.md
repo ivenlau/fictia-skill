@@ -173,6 +173,45 @@ fictia vector clear --yes                   # 清空全部（需 --yes 确认）
 
 向量数据存放在 `<project_root>/.fictia/zvec/`，已在 `.gitignore` 中排除。
 
+## entity 子命令详解（动态写作空间）
+
+管理 8 类有状态的实体（characters/locations/items/events/foreshadowing/easter_eggs/storylines/timeline）。
+
+```
+fictia entity index-all                          从项目文件批量提取所有实体
+fictia entity index <collection>                 提取指定类型的实体
+fictia entity status                             各 collection 实体数量统计
+fictia entity list <collection> [--state <s>]    列出实体（可按状态过滤）
+fictia entity get <collection> <entity_id>       获取单个实体详情（JSON）
+fictia entity search "<query>" [--collection X]  语义搜索实体
+fictia entity update <col> <id> --state <s> --state-ch <N>  更新实体状态
+fictia entity clear [--collection X] [--yes]     清空实体数据
+fictia entity outline-hints --chapter <N>        解析大纲线索（调试用）
+```
+
+### 写作空间组装
+
+```bash
+fictia ctx writing-space --chapter <N>           组装写作空间 → .fictia-cache/
+```
+
+写作空间 = 静态设计文档 + 必读动态实体 + 按需检索。大纲解析器自动从大纲中提取角色/地点/伏笔线索，检索对应实体的当前状态。
+
+### 写作备注扩展
+
+章节写作备注支持实体状态变更声明：
+
+```markdown
+- **人物状态更新**: 林远左臂受伤 (第12段)
+- **地点变更**: 北域冰原 → state: active
+- **物品状态**: 神秘玉佩 → state: discovered
+- **事件结案**: 北域围猎 → state: concluded
+```
+
+### 数据位置
+
+实体数据存放在 `<project_root>/.fictia/zvec/{characters,locations,...}/`，与 chunk-based 全文检索并存。
+
 ## 设计原则
 
 1. **LLM 不做机械事**：字数统计、状态推进、面板渲染、BFS 传播——全部脚本化

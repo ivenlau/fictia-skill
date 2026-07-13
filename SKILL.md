@@ -171,6 +171,99 @@ fictia vector index-source
 
 ---
 
+## 动态写作空间（可选 Entity RAG）
+
+适用场景：长篇创作中需要精细化的实体状态管理——角色状态随章节变化、伏笔生命周期追踪、地点/物品/事件的状态流转。
+
+### 核心概念
+
+**静态数据**（以文件为单位读取）：风格指南、艺术设计、世界观规则、前章正文、源文本、用户笔记。
+
+**动态实体**（以 entity 为单位检索，有状态、有版本）：
+
+| Collection | 实体类型 | 状态流转示例 |
+|-----------|---------|------------|
+| `characters` | 角色 | introduced → active → major_change → exit/death |
+| `locations` | 地点 | introduced → active → destroyed/sealed/abandoned |
+| `items` | 物品 | unknown → hidden → discovered → owned → destroyed |
+| `events` | 事件 | pending → happening → concluded → consequence |
+| `foreshadowing` | 伏笔 | planted → seeded → escalated → resolved/abandoned |
+| `easter_eggs` | 彩蛋 | planted → hinted → discoverable → revealed |
+| `storylines` | 故事线 | dormant → active → escalating → climax → resolved |
+| `timeline` | 时间线 | past → current → foreshadowed |
+
+### 启用
+
+同向量检索，需先安装 zvec 和选择 embedding 模式。
+
+### 初始化实体索引
+
+从现有项目文件（characters/*.md、world/*.md、narrative-weave.md、outline/chapters/*.md）批量提取实体：
+
+```bash
+fictia entity index-all          # 全量提取所有 8 类实体
+fictia entity index characters   # 仅提取角色
+fictia entity index foreshadowing # 仅提取伏笔
+```
+
+### 写作空间组装
+
+为指定章节组装完整的写作空间上下文（静态 + 必读动态 + 按需检索）：
+
+```bash
+fictia ctx writing-space --chapter 16
+# → .fictia-cache/ch16-writing-space.md
+```
+
+写作空间包含三层：
+1. **静态层**：风格指南、艺术设计、世界观速查、前章正文、源文本、用户笔记
+2. **必读动态层**：本章大纲、大纲中提到的角色卡（当前状态）、地点、伏笔指令、时间线、活跃故事线
+3. **按需检索层**：agent 可通过 `fictia entity search` 自主查询更多实体
+
+### 实体查询
+
+```bash
+fictia entity status                          # 各 collection 统计
+fictia entity list characters                 # 列出所有角色
+fictia entity list foreshadowing --state planted  # 列出已埋设的伏笔
+fictia entity get characters char_lin_yuan_v001   # 获取单个实体详情
+fictia entity search "北域" --collection locations # 语义搜索地点
+fictia entity search "林远受伤" --top-k 5         # 跨 collection 语义搜索
+```
+
+### 大纲线索解析（调试用）
+
+```bash
+fictia entity outline-hints --chapter 16
+# 输出大纲中提取的角色、地点、伏笔、事件等线索
+```
+
+### 状态更新
+
+章节写完后，写作备注中的状态变更会自动解析：
+
+```markdown
+### 写作备注
+- **人物状态更新**: 林远左臂受伤 (第12段)
+- **地点变更**: 北域冰原 → state: active
+- **物品状态**: 神秘玉佩 → state: discovered
+- **事件结案**: 北域围猎 → state: concluded
+```
+
+也可手动更新：
+
+```bash
+fictia entity update characters char_lin_yuan_v001 --state major_change --state-ch 16
+```
+
+### 实体数据位置
+
+实体数据存放在 `<project>/.fictia/zvec/{characters,locations,items,events,foreshadowing,easter_eggs,storylines,timeline}/`，已加入 `.gitignore`。
+
+与现有的 chunk-based 全文检索（chapters/notes/sources）并存——chunk 用于模糊语义搜索，entity 用于精确状态查询。
+
+---
+
 ## 头脑风暴模式
 
 适用场景：当主代理即将执行的**任务或工作流**属于以下类型时，应在执行前询问用户是否开启头脑风暴模式，以更系统的方式对齐目标、约束和方案：

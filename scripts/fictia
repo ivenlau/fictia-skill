@@ -55,6 +55,22 @@ except ImportError:  # pragma: no cover
     V = None  # type: ignore
     _VECTOR_OK = False
 
+# 动态写作空间（entity store）—— 软依赖
+try:
+    from lib import entity_store as ES  # type: ignore
+    from lib import entity_extractors as EE  # type: ignore
+    from lib import entity_schema as ESchema  # type: ignore
+    from lib import writing_space as WS  # type: ignore
+    from lib import outline_parser as OP  # type: ignore
+    _ENTITY_OK = True
+except ImportError:  # pragma: no cover
+    ES = None  # type: ignore
+    EE = None  # type: ignore
+    ESchema = None  # type: ignore
+    WS = None  # type: ignore
+    OP = None  # type: ignore
+    _ENTITY_OK = False
+
 
 # ---------- 子命令实现 ----------
 
@@ -530,6 +546,23 @@ def cmd_ctx(args: argparse.Namespace) -> int:
                 out = cache_dir / f"ch{ch:02d}-editor-context.md"
                 out.write_text(C.assemble_editor_context(root, ch), encoding="utf-8")
                 print(f"✓ 已写入：{out}")
+    elif program == "writing-space":
+        if not _ENTITY_OK:
+            sys.stderr.write("错误：entity 模块导入失败，无法组装写作空间。\n")
+            return 2
+        ch_str = args.chapter or raw
+        if not ch_str:
+            sys.stderr.write("writing-space 需要章节号：fictia ctx writing-space --chapter <N>\n")
+            return 2
+        ch = int(ch_str)
+        try:
+            content = WS.assemble_writing_space(root, ch)
+        except Exception as e:
+            sys.stderr.write(f"错误：组装写作空间失败：{e}\n")
+            return 2
+        out = cache_dir / f"ch{ch:02d}-writing-space.md"
+        out.write_text(content, encoding="utf-8")
+        print(f"✓ 已写入：{out}")
     else:
         sys.stderr.write(f"未知 ctx 程序: {program}\n")
         sys.stderr.write("可用: character-registry, character-card, world-quickref, chapter-weave, chapter-art, style-act, weave-summary, art-summary, previous-chapter, chapter-act, assemble\n")
@@ -796,6 +829,180 @@ def cmd_vector(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_entity(args: argparse.Namespace) -> int:
+    """动态写作空间 — 实体管理。"""
+    if not _ENTITY_OK:
+        sys.stderr.write(
+            "错误：entity 模块导入失败。请检查 scripts/lib/entity_*.py 是否存在。\n"
+        )
+        return 2
+    root = _resolve_root(args)
+    sub_cmd = args.entity_cmd
+
+    try:
+        store = ES.open_entity_store_with_default_provider(root)
+    except Exception as e:
+        sys.stderr.write(f"错误：初始化 entity store 失败：{e}\n")
+        return 2
+
+    # entity index-all
+    if sub_cmd == "index-all":
+        all_docs = EE.extract_all(root)
+        total = 0
+        for col_name, docs in all_docs.items():
+            try:
+                n = store.upsert_entities(docs)
+                total += n
+                print(f"  {col_name}: {n} entities")
+            except Exception as e:
+                sys.stderr.write(f"  ⚠ {col_name}: {e}\n")
+        print(f"✓ entity index-all: total {total} entities")
+        return 0
+
+    # entity index <collection>
+    if sub_cmd == "index":
+        col_name = args.collection
+        if not col_name:
+            sys.stderr.write("用法: entity index <collection>\n")
+            return 2
+        docs = EE.extract_collection(root, col_name)
+        try:
+            n = store.upsert_entities(docs)
+        except Exception as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ {col_name}: indexed {n} entities")
+        return 0
+
+    # entity status
+    if sub_cmd == "status":
+        s = store.status()
+        print(f"embedding: {s['embedding_model']} (dim={s['vector_dim']})")
+        for name, count in s["collections"].items():
+            print(f"  {name}: {count} entities")
+        print(f"  total: {s['total_entities']} entities")
+        return 0
+
+    # entity list <collection> [--state <state>]
+    if sub_cmd == "list":
+        col_name = args.collection
+        if not col_name:
+            sys.stderr.write("用法: entity list <collection> [--state <state>]\n")
+            return 2
+        entities = store.list_entities(col_name, state=args.state)
+        if not entities:
+            print(f"（{col_name} 中无{' ' + args.state if args.state else ''}实体）")
+            return 0
+        for e in entities:
+            name = e.get("name", e.get("id", "?"))
+            state = e.get("state", "?")
+            ver = e.get("version", "?")
+            print(f"  {e.get('id', '?')} [{state}] v{ver} {name}")
+        print(f"共 {len(entities)} 个实体")
+        return 0
+
+    # entity get <collection> <entity_id>
+    if sub_cmd == "get":
+        col_name = args.collection
+        eid = args.entity_id
+        if not col_name or not eid:
+            sys.stderr.write("用法: entity get <collection> <entity_id>\n")
+            return 2
+        entity = store.get_entity(col_name, eid)
+        if entity is None:
+            sys.stderr.write(f"未找到：{eid}\n")
+            return 2
+        import json
+        print(json.dumps(entity, ensure_ascii=False, indent=2))
+        return 0
+
+    # entity search [--collection <col>] [--state <state>] [--top-k N] query
+    if sub_cmd == "search":
+        query = args.query
+        if not query:
+            sys.stderr.write("用法: entity search \"<query>\" [--collection <col>] [--state <state>] [--top-k N]\n")
+            return 2
+        from lib.entity_retriever import EntityRetriever
+        retriever = EntityRetriever(store)
+        results = retriever.retrieve_on_demand(
+            query,
+            collection=args.collection,
+            top_k=args.top_k,
+            state=args.state,
+        )
+        if not results:
+            print("（无命中）")
+            return 0
+        for i, e in enumerate(results, 1):
+            name = e.get("name", "?")
+            state = e.get("state", "?")
+            col = e.get("_collection", args.collection or "?")
+            score = e.get("score", 0)
+            print(f"[{i}] {name} [{state}] score={score:.4f}")
+            snippet = e.get("text", "").replace("\n", " ").strip()
+            if len(snippet) > 200:
+                snippet = snippet[:200] + "..."
+            print(f"    > {snippet}")
+        return 0
+
+    # entity update <collection> <entity_id> --state <state> --state-ch <N>
+    if sub_cmd == "update":
+        col_name = args.collection
+        eid = args.entity_id
+        new_state = args.state
+        state_ch = args.state_ch
+        if not col_name or not eid or not new_state:
+            sys.stderr.write("用法: entity update <collection> <entity_id> --state <state> --state-ch <N>\n")
+            return 2
+        state_ch_int = int(state_ch) if state_ch else 0
+        extra_fields = {}
+        if args.fields:
+            for f in args.fields:
+                if "=" in f:
+                    k, v = f.split("=", 1)
+                    extra_fields[k.strip()] = v.strip()
+        ok = store.update_entity_state(
+            col_name, eid, new_state, state_ch_int,
+            new_text=args.text, extra_fields=extra_fields or None,
+        )
+        if ok:
+            print(f"✓ {eid}: → {new_state} (ch{state_ch_int:02d})")
+        else:
+            sys.stderr.write(f"✗ 更新失败（状态转移不合法或实体不存在）：{eid}\n")
+            return 2
+        return 0
+
+    # entity clear [--collection <col>] [--yes]
+    if sub_cmd == "clear":
+        if not args.yes:
+            target = args.collection or "ALL"
+            print(f"确认清空 entity 数据（{target}）？加 --yes 跳过确认。")
+            return 1
+        try:
+            cleared = store.clear(collection=args.collection)
+        except Exception as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ cleared: {', '.join(cleared)}")
+        return 0
+
+    # entity outline-hints --chapter N（调试用）
+    if sub_cmd == "outline-hints":
+        ch_str = args.chapter
+        if not ch_str:
+            sys.stderr.write("用法: entity outline-hints --chapter <N>\n")
+            return 2
+        ch = int(ch_str)
+        hints = OP.parse_outline_for_chapter(root, ch)
+        print(OP.format_outline_hints(hints))
+        return 0
+
+    sys.stderr.write(
+        "用法: entity index-all|index|status|list|get|search|update|clear|outline-hints [...]\n"
+    )
+    return 2
+
+
 # ---------- argparse 配置 ----------
 
 
@@ -875,7 +1082,8 @@ def build_parser() -> argparse.ArgumentParser:
                        choices=["character-registry", "character-card", "world-quickref",
                                 "chapter-weave", "chapter-art", "style-act",
                                 "weave-summary", "art-summary", "previous-chapter",
-                                "chapter-act", "assemble", "semantic-search"],
+                                "chapter-act", "assemble", "semantic-search",
+                                "writing-space"],
                        help="ctx 程序")
     p_ctx.add_argument("arg", nargs="?",
                        help="位置参数（含义随 program 变：角色名/章节号/幕名/assemble role/semantic-search 查询）")
@@ -904,6 +1112,30 @@ def build_parser() -> argparse.ArgumentParser:
                        help="search/clear 限定 collection")
     p_vec.add_argument("--yes", action="store_true", help="clear 不加确认（用于批量脚本）")
     p_vec.set_defaults(func=cmd_vector)
+
+    # entity（动态写作空间 — 实体管理）
+    _entity_collections = list(ESchema.ENTITY_COLLECTIONS) if _ENTITY_OK else [
+        "characters", "locations", "items", "events",
+        "foreshadowing", "easter_eggs", "storylines", "timeline",
+    ]
+    p_ent = sub.add_parser("entity", help="动态写作空间 — 实体管理（characters/locations/items/events/foreshadowing/...）")
+    p_ent.add_argument("entity_cmd",
+                       choices=["index-all", "index", "status", "list", "get",
+                                "search", "update", "clear", "outline-hints"],
+                       help="子操作")
+    p_ent.add_argument("collection", nargs="?",
+                       choices=_entity_collections,
+                       help="entity collection 名")
+    p_ent.add_argument("entity_id", nargs="?", help="entity get/update 用的实体 ID")
+    p_ent.add_argument("--state", help="list/update/search 用的状态过滤")
+    p_ent.add_argument("--state-ch", help="update 用的状态生效章节号")
+    p_ent.add_argument("--text", help="update 用的新文本")
+    p_ent.add_argument("--fields", nargs="*", help="update 用的额外字段（key=value 格式）")
+    p_ent.add_argument("--query", help="search 用的查询语句")
+    p_ent.add_argument("--top-k", type=int, default=8, help="search 命中数（默认 8）")
+    p_ent.add_argument("--chapter", "-c", help="outline-hints 用的章节号")
+    p_ent.add_argument("--yes", action="store_true", help="clear 不加确认")
+    p_ent.set_defaults(func=cmd_entity)
 
     # verdict
     p_v = sub.add_parser("verdict", help="解析审核/校验报告")
