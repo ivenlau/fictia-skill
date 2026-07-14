@@ -791,44 +791,8 @@ def _count_table_rows_after_header(text: str, header: str) -> int:
 # ---------- 语义检索（需 lib.vector + zvec） ----------
 
 
-def build_semantic_search(
-    root: Path,
-    query: str,
-    top_k: int = 8,
-    collection: str | None = None,
-) -> str:
-    """把语义检索结果格式化为 markdown 片段，供 LLM 上下文使用。
-
-    返回格式：
-        ## 语义检索结果
-
-        **查询**：<query>
-        **命中**：<N> 条
-
-        ### 1. [chapters] 第 3 章（chunk 12，score 0.87）
-        > <chunk text>
-
-        ### 2. [notes] summary（chunk 1，score 0.81）
-        > <chunk text>
-
-    zvec 未装、collection 为空、或无命中时返回空字符串。
-    """
-    try:
-        import importlib
-        V = importlib.import_module("lib.vector")
-    except ImportError:
-        return ""
-
-    try:
-        store = V.open_store_with_default_provider(root)
-    except V.VectorError:
-        return ""
-
-    try:
-        hits = store.search(query, top_k=top_k, collection=collection)
-    except V.VectorError:
-        return ""
-
+def format_semantic_search(hits: list, query: str) -> str:
+    """把 Hit 列表格式化为 markdown 片段。无命中时返回空字符串。"""
     if not hits:
         return ""
 
@@ -873,3 +837,44 @@ def build_semantic_search(
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def build_semantic_search(
+    root: Path,
+    query: str,
+    top_k: int = 8,
+    collection: str | None = None,
+) -> str:
+    """把语义检索结果格式化为 markdown 片段，供 LLM 上下文使用。
+
+    返回格式：
+        ## 语义检索结果
+
+        **查询**：<query>
+        **命中**：<N> 条
+
+        ### 1. [chapters] 第 3 章（chunk 12，score 0.87）
+        > <chunk text>
+
+        ### 2. [notes] summary（chunk 1，score 0.81）
+        > <chunk text>
+
+    zvec 未装、collection 为空、或无命中时返回空字符串。
+    """
+    try:
+        import importlib
+        V = importlib.import_module("lib.vector")
+    except ImportError:
+        return ""
+
+    try:
+        store = V.open_store_with_default_provider(root)
+    except V.VectorError:
+        return ""
+
+    try:
+        hits = store.search(query, top_k=top_k, collection=collection)
+    except V.VectorError:
+        return ""
+
+    return format_semantic_search(hits, query)

@@ -515,27 +515,62 @@ def cmd_ctx(args: argparse.Namespace) -> int:
         if not query:
             sys.stderr.write("semantic-search 需要查询语句：fictia ctx semantic-search \"<query>\" [--top-k 8]\n")
             return 2
-        try:
-            store = V.open_store_with_default_provider(root)
-            hits = store.search(query, top_k=args.top_k, collection=args.collection)
-        except V.VectorError as e:
-            sys.stderr.write(f"错误：{e}\n")
-            return 2
-        if not _VECTOR_OK or not hasattr(C, "build_semantic_search"):
-            # 退化为简单 list 输出（Step 6 之前的过渡）
-            if not hits:
-                print("(无命中)")
-            else:
-                for i, h in enumerate(hits, 1):
-                    ch = h.metadata.get("chapter", "-")
-                    print(f"[{i}] {h.collection} chapter={ch} score={h.score:.4f}")
-                    snippet = h.text.replace("\n", " ").strip()
-                    if len(snippet) > 200:
-                        snippet = snippet[:200] + "..."
-                    print(f"    > {snippet}")
+
+        # server 模式：走 HTTP，避免本地 open_store 与 server 持有的 zvec 锁冲突
+        import os
+        if os.environ.get("FICTIA_EMBEDDING", "").lower() == "server":
+            try:
+                import httpx
+                server_url = os.environ.get("FICTIA_EMBED_SERVER", "http://127.0.0.1:8700")
+                resp = httpx.post(
+                    f"{server_url}/search",
+                    json={
+                        "query": query,
+                        "collection": args.collection or "chapters",
+                        "top_k": args.top_k,
+                    },
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                results = resp.json()["results"]
+            except Exception as e:
+                sys.stderr.write(f"错误：server semantic-search 失败：{e}\n")
+                return 2
+            coll_name = args.collection or "chapters"
+            hits = [
+                V.Hit(
+                    id=h.get("id", "?"),
+                    collection=coll_name,
+                    text=h.get("text", ""),
+                    score=h.get("score", 0.0),
+                    metadata=h.get("metadata", {}),
+                )
+                for h in results
+            ]
+        else:
+            # 本地模式
+            try:
+                store = V.open_store_with_default_provider(root)
+                hits = store.search(query, top_k=args.top_k, collection=args.collection)
+            except V.VectorError as e:
+                sys.stderr.write(f"错误：{e}\n")
+                return 2
+
+        # 输出：优先 markdown（format_semantic_search），退化时走简单列表
+        if hasattr(C, "format_semantic_search"):
+            out = C.format_semantic_search(hits, query)
+            print(out if out else "(无命中)")
             return 0
-        # 正常路径：build_semantic_search 输出 markdown
-        print(C.build_semantic_search(root, query, top_k=args.top_k, collection=args.collection))
+        if not hits:
+            print("(无命中)")
+            return 0
+        for i, h in enumerate(hits, 1):
+            ch = h.metadata.get("chapter", "-")
+            print(f"[{i}] {h.collection} chapter={ch} score={h.score:.4f}")
+            snippet = h.text.replace("\n", " ").strip()
+            if len(snippet) > 200:
+                snippet = snippet[:200] + "..."
+            print(f"    > {snippet}")
         return 0
     elif program == "weave-summary":
         print(C.build_narrative_weave_summary(root))

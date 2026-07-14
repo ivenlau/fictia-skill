@@ -206,6 +206,49 @@ def test_empty_hits_returns_empty() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# format_semantic_search 单元测试（不依赖 store / zvec）
+# --------------------------------------------------------------------------- #
+
+
+def test_format_semantic_search_basic() -> None:
+    """format_semantic_search 直接格式化 Hit 列表。"""
+    from dataclasses import dataclass
+
+    @dataclass
+    class MockHit:
+        id: str
+        collection: str
+        text: str
+        score: float
+        metadata: dict
+
+    hits = [
+        MockHit(id="ch03:0042", collection="chapters", text="林远在北域受伤。",
+                score=0.87, metadata={"chapter": 3}),
+        MockHit(id="notes:0001", collection="notes", text="主题：林远背景。",
+                score=0.81, metadata={"note_id": "summary"}),
+    ]
+
+    out = C.format_semantic_search(hits, "林远受伤")
+    assert "## 语义检索结果" in out
+    assert "**查询**：林远受伤" in out
+    assert "**命中**：2 条" in out
+    assert "[chapters]" in out
+    assert "[notes]" in out
+    assert "第 3 章" in out
+    assert "chunk 42" in out  # 从 id 尾部解析
+    assert "note=summary" in out
+    assert "0.87" in out
+    assert "0.81" in out
+    assert "> 林远在北域受伤" in out
+
+
+def test_format_semantic_search_empty_returns_empty() -> None:
+    """空 hit 列表返回空字符串。"""
+    assert C.format_semantic_search([], "any query") == ""
+
+
+# --------------------------------------------------------------------------- #
 # Test runner
 # --------------------------------------------------------------------------- #
 
@@ -217,6 +260,8 @@ TEST_FUNCTIONS = [
     test_format_includes_required_sections,
     test_top_k_limit,
     test_empty_hits_returns_empty,
+    test_format_semantic_search_basic,
+    test_format_semantic_search_empty_returns_empty,
 ]
 
 
