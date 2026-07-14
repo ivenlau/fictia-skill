@@ -227,6 +227,7 @@ class EntityDoc:
 
 # 通用字段（所有 collection 都有）
 _COMMON_FIELDS = [
+    ("text", "STRING"),
     ("state", "STRING"),
     ("state_ch", "INT64"),
     ("name", "STRING"),
@@ -339,19 +340,18 @@ def parse_entity_id(entity_id: str) -> tuple[str, str, int]:
 def make_slug(name: str) -> str:
     """从中文名称生成稳定的 slug。
 
-    策略：取拼音首字母或直接用 transliteration 不可行，
-    改为用 hash 的前 8 位作为 slug 后缀，保留可读前缀。
-    简化实现：用 name 的 UTF-8 编码 hex 摘要。
+    策略：用 name 的 UTF-8 编码 hex 摘要作为 slug，
+    确保只包含 ASCII 字符（zvec doc_id 不支持中文）。
     """
     import hashlib
 
-    h = hashlib.sha256(name.encode("utf-8")).hexdigest()[:8]
-    # 尝试保留可读部分：去掉空格和特殊字符
+    h = hashlib.sha256(name.encode("utf-8")).hexdigest()[:12]
+    # 尝试保留可读部分：只保留 ASCII 字母和数字
     clean = ""
     for ch in name:
-        if ch.isalnum():
+        if ch.isascii() and ch.isalnum():
             clean += ch
     if not clean:
         return h
-    # 截断到 12 字符 + hash 后缀
-    return f"{clean[:12]}_{h}"
+    # 截断到 8 字符 + hash 后缀
+    return f"{clean[:8]}_{h}"

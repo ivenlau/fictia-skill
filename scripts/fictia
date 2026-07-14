@@ -733,14 +733,23 @@ def cmd_vector(args: argparse.Namespace) -> int:
         return 2
 
     sub_cmd = args.vec_cmd
-    try:
-        store = V.open_store_with_default_provider(root)
-    except V.VectorError as e:
-        sys.stderr.write(f"错误：{e}\n")
-        return 2
-    except Exception as e:
-        sys.stderr.write(f"错误：初始化向量存储失败：{e}\n")
-        return 2
+
+    # server 模式下 search/status 不需要打开本地 store
+    import os
+    _is_server = os.environ.get("FICTIA_EMBEDDING", "").lower() == "server"
+
+    # search 走 server 时跳过 store 初始化
+    if sub_cmd == "search" and _is_server:
+        pass  # 下方 search 分支会走 HTTP
+    else:
+        try:
+            store = V.open_store_with_default_provider(root)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        except Exception as e:
+            sys.stderr.write(f"错误：初始化向量存储失败：{e}\n")
+            return 2
 
     if sub_cmd == "status":
         s = store.status()
@@ -818,6 +827,39 @@ def cmd_vector(args: argparse.Namespace) -> int:
         if not query:
             sys.stderr.write("用法: vector search --query \"<query>\" [--top-k N] [--collection X]\n")
             return 2
+
+        # server 模式：走 HTTP
+        import os
+        if os.environ.get("FICTIA_EMBEDDING", "").lower() == "server":
+            try:
+                import httpx
+                server_url = os.environ.get("FICTIA_EMBED_SERVER", "http://127.0.0.1:8700")
+                resp = httpx.post(
+                    f"{server_url}/search",
+                    json={
+                        "query": query,
+                        "collection": args.collection or "chapters",
+                        "top_k": args.top_k,
+                    },
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                results = resp.json()["results"]
+                if not results:
+                    print("(无命中)")
+                    return 0
+                for i, h in enumerate(results, 1):
+                    ch = h.get("metadata", {}).get("chapter", "-")
+                    print(f"[{i}] {h.get('id', '?')} chapter={ch} score={h.get('score', 0):.4f}")
+                    snippet = h.get("text", "").replace("\n", " ").strip()
+                    if len(snippet) > 200:
+                        snippet = snippet[:200] + "..."
+                    print(f"    > {snippet}")
+                return 0
+            except Exception as e:
+                sys.stderr.write(f"警告：server search 失败，回退到本地：{e}\n")
+
+        # 本地模式
         try:
             hits = store.search(query, top_k=args.top_k, collection=args.collection)
         except V.VectorError as e:
@@ -945,6 +987,43 @@ def cmd_entity(args: argparse.Namespace) -> int:
         if not query:
             sys.stderr.write("用法: entity search \"<query>\" [--collection <col>] [--state <state>] [--top-k N]\n")
             return 2
+
+        # server 模式：走 HTTP，避免本地打开 collection
+        import os
+        if os.environ.get("FICTIA_EMBEDDING", "").lower() == "server":
+            try:
+                import httpx
+                server_url = os.environ.get("FICTIA_EMBED_SERVER", "http://127.0.0.1:8700")
+                resp = httpx.post(
+                    f"{server_url}/entity/search",
+                    json={
+                        "query": query,
+                        "collection": args.collection,
+                        "top_k": args.top_k,
+                        "state": args.state,
+                    },
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                results = resp.json()["results"]
+                if not results:
+                    print("（无命中）")
+                    return 0
+                for i, e in enumerate(results, 1):
+                    name = e.get("name", "?")
+                    state = e.get("state", "?")
+                    col = e.get("collection", args.collection or "?")
+                    score = e.get("score", 0)
+                    print(f"[{i}] {name} [{state}] score={score:.4f}")
+                    snippet = e.get("text", "").replace("\n", " ").strip()
+                    if len(snippet) > 200:
+                        snippet = snippet[:200] + "..."
+                    print(f"    > {snippet}")
+                return 0
+            except Exception as e:
+                sys.stderr.write(f"警告：server entity search 失败，回退到本地：{e}\n")
+
+        # 本地模式
         from lib.entity_retriever import EntityRetriever
         retriever = EntityRetriever(store)
         results = retriever.retrieve_on_demand(

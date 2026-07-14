@@ -121,6 +121,56 @@ class BgeM3LocalEmbedding:
 
 
 # --------------------------------------------------------------------------- #
+# Server: 本地常驻 embedding 服务
+# --------------------------------------------------------------------------- #
+
+
+class ServerEmbedding:
+    """连接本地常驻 embedding 服务，避免每次冷启动加载模型。
+
+    环境变量：
+        FICTIA_EMBED_SERVER — 服务地址，默认 http://127.0.0.1:8700
+
+    安装：pip install httpx
+    """
+
+    name = "server-bge-m3-1024"
+    dim = 1024
+
+    def __init__(self) -> None:
+        self._url = os.environ.get("FICTIA_EMBED_SERVER", "http://127.0.0.1:8700")
+        try:
+            import httpx  # type: ignore
+        except ImportError as e:
+            raise EmbeddingError(
+                "未安装 httpx。请运行 `pip install httpx` 后重试。"
+            ) from e
+        # 验证服务是否可达
+        try:
+            resp = httpx.get(f"{self._url}/health", timeout=5)
+            resp.raise_for_status()
+            info = resp.json()
+            self.dim = info.get("dim", 1024)
+            self.name = f"server-{info.get('model', 'unknown')}-{self.dim}"
+        except Exception as e:
+            raise EmbeddingError(
+                f"无法连接 embedding 服务 {self._url}：{e}\n"
+                "请先启动服务：python embed_server.py --port 8700"
+            ) from e
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        import httpx  # type: ignore
+
+        resp = httpx.post(
+            f"{self._url}/embed",
+            json={"texts": list(texts)},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        return resp.json()["vectors"]
+
+
+# --------------------------------------------------------------------------- #
 # API: 智谱 embedding-2 via HTTP
 # --------------------------------------------------------------------------- #
 
@@ -178,7 +228,7 @@ class ZhipuApiEmbedding:
 # --------------------------------------------------------------------------- #
 
 
-_VALID_MODES = ("stub", "local", "api")
+_VALID_MODES = ("stub", "local", "api", "server")
 
 
 def get_provider(name: str | None = None) -> EmbeddingProvider:
@@ -202,6 +252,8 @@ def get_provider(name: str | None = None) -> EmbeddingProvider:
         return BgeM3LocalEmbedding()
     if mode == "api":
         return ZhipuApiEmbedding()
+    if mode == "server":
+        return ServerEmbedding()
     # unreachable
     raise EmbeddingError(f"未知 mode: {mode}")
 

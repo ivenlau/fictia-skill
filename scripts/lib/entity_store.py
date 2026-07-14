@@ -75,8 +75,7 @@ class EntityStore:
         self.provider = provider
         self.dim = provider.dim
         self._cache: dict[str, "zvec.Collection"] = {}
-        for name in ENTITY_COLLECTIONS:
-            self._cache[name] = self._ensure(name)
+        # 惰性加载：只在首次访问时打开 collection
 
     def close(self) -> None:
         """释放所有 collection 连接。"""
@@ -103,6 +102,8 @@ class EntityStore:
             raise VectorError(
                 f"未知 entity collection: {name}；可选：{ENTITY_COLLECTIONS}"
             )
+        if name not in self._cache:
+            self._cache[name] = self._ensure(name)
         return self._cache[name]
 
     # ---- 写入 ----
@@ -315,10 +316,16 @@ class EntityStore:
         query: str,
         top_k: int = 8,
         state: str | None = None,
+        vec: list[float] | None = None,
     ) -> list[dict]:
-        """语义搜索指定 collection 的实体。"""
+        """语义搜索指定 collection 的实体。
+
+        Args:
+            vec: 预计算的查询向量（可选，避免重复 embed）。
+        """
         col = self._col(collection)
-        vec = self.provider.embed([query])[0]
+        if vec is None:
+            vec = self.provider.embed([query])[0]
         try:
             hits = col.query(_ZVEC.VectorQuery("vec", vector=vec), topk=top_k * 3)
         except Exception as e:

@@ -116,9 +116,12 @@ class EntityRetriever:
         state: str | None = None,
     ) -> list[dict]:
         """按需语义检索（agent 主动调用）。"""
+        # 预计算查询向量，避免跨 collection 重复 embed
+        vec = self.store.provider.embed([query])[0]
+
         if collection:
             return self.store.search_entities(
-                collection, query, top_k=top_k, state=state
+                collection, query, top_k=top_k, state=state, vec=vec
             )
 
         # 跨 collection 检索
@@ -127,7 +130,7 @@ class EntityRetriever:
         all_results: list[dict] = []
         for col in ENTITY_COLLECTIONS:
             try:
-                hits = self.store.search_entities(col, query, top_k=3, state=state)
+                hits = self.store.search_entities(col, query, top_k=3, state=state, vec=vec)
                 all_results.extend(hits)
             except Exception:
                 continue
