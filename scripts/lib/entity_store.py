@@ -229,7 +229,7 @@ class EntityStore:
             hits = col.query(
                 _ZVEC.VectorQuery("vec", vector=[0.0] * self.dim),
                 topk=10000,
-                filter=f'id == "{entity_id}"',
+                filter=f"id = '{entity_id}'",
             )
             if hits:
                 return self._hit_to_dict(hits[0])
@@ -357,7 +357,7 @@ class EntityStore:
                 hits = col.query(
                     _ZVEC.VectorQuery("vec", vector=[0.0] * self.dim),
                     topk=10000,
-                    filter=f'name == "{name}"',
+                    filter=f"name = '{name}'",
                 )
                 if hits:
                     dicts = [self._hit_to_dict(h) for h in hits]

@@ -242,6 +242,34 @@ def entity_search(req: EntitySearchRequest):
     )
 
 
+class WritingSpaceRequest(BaseModel):
+    chapter: int
+
+
+class WritingSpaceResponse(BaseModel):
+    content: str
+
+
+@app.post("/entity/writing-space", response_model=WritingSpaceResponse)
+def entity_writing_space(req: WritingSpaceRequest):
+    store = get_entity_store()
+    if store is None:
+        return WritingSpaceResponse(content="（entity store 不可用）")
+
+    project_root = _find_project_root()
+    if not project_root:
+        return WritingSpaceResponse(content="（未找到项目目录）")
+
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from lib.writing_space import WritingSpaceAssembler
+        assembler = WritingSpaceAssembler(project_root, store)
+        content = assembler.assemble(req.chapter)
+        return WritingSpaceResponse(content=content)
+    except Exception as e:
+        return WritingSpaceResponse(content=f"（组装失败：{e}）")
+
+
 # --------------------------------------------------------------------------- #
 # 启动
 # --------------------------------------------------------------------------- #
