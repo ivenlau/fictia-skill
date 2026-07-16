@@ -37,7 +37,7 @@ from lib.embeddings import EmbeddingProvider, get_provider
 
 VECTOR_ROOT_DIRNAME = ".fictia"
 ZVEC_DIRNAME = "zvec"
-COLLECTIONS = ("chapters", "notes", "sources")
+COLLECTIONS = ("chapters", "notes", "sources", "design", "world", "outlines")
 
 CHUNK_MAX_CHARS = 500
 CHUNK_OVERLAP = 50
@@ -254,6 +254,181 @@ def chunk_source(text: str, slug: str, workflow: str = "") -> list[Chunk]:
 
 
 # --------------------------------------------------------------------------- #
+# 新增 chunk 策略：section / scene / table_row
+# --------------------------------------------------------------------------- #
+
+
+_SECTION_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)")
+
+
+def chunk_by_section(text: str, metadata: dict, max_chars: int = CHUNK_MAX_CHARS) -> list[Chunk]:
+    """按 ## / ### 标题切段，每段作为一个 chunk。
+
+    heading 作为 chunk 前缀提供上下文；超长段落按句号切窗。
+    用于：design files, world files。
+    """
+    # 先去 front-matter
+    cleaned = strip_frontmatter(text)
+
+    sections: list[tuple[str, str]] = []
+    lines = cleaned.splitlines()
+    current_heading = ""
+    current_body: list[str] = []
+
+    for line in lines:
+        m = _SECTION_HEADING_RE.match(line)
+        if m and len(m.group(1)) <= 3:  # # ~ ###
+            if current_body:
+                body_text = "\n".join(current_body).strip()
+                if body_text:
+                    sections.append((current_heading, body_text))
+            current_heading = line.strip()
+            current_body = []
+        else:
+            current_body.append(line)
+
+    if current_body:
+        body_text = "\n".join(current_body).strip()
+        if body_text:
+            sections.append((current_heading, body_text))
+
+    chunks: list[Chunk] = []
+    chunk_idx = 0
+    for heading, body in sections:
+        # heading 作为上下文前缀
+        text_block = f"{heading}\n{body}" if heading else body
+        pieces = _split_long(text_block, max_chars, CHUNK_OVERLAP)
+        for piece in pieces:
+            section_name = re.sub(r"^#{1,3}\s*", "", heading).strip() if heading else ""
+            chunks.append(
+                Chunk(
+                    text=piece,
+                    chunk_index=chunk_idx,
+                    metadata={**metadata, "section": section_name},
+                )
+            )
+            chunk_idx += 1
+
+    return chunks
+
+
+_SCENE_RE = re.compile(r"(?=^###\s|^\*\*场景\s*\d)", re.MULTILINE)
+
+
+def chunk_by_scene(text: str, metadata: dict, max_chars: int = CHUNK_MAX_CHARS) -> list[Chunk]:
+    """按场景切段（### 场景 N 或 **场景 N**）。
+
+    先提取 ## 场景序列 下的内容，再按场景分割。
+    用于：outline/chapters/*.md。
+    """
+    cleaned = strip_frontmatter(text)
+
+    # 提取场景序列 section
+    scene_section = re.search(
+        r"^##\s*场景序列[^\n]*\n([\s\S]*?)(?=^##\s|\Z)",
+        cleaned,
+        re.MULTILINE,
+    )
+    if not scene_section:
+        # 没找到场景序列，回退到 section 切分
+        return chunk_by_section(text, metadata, max_chars)
+
+    scene_body = scene_section.group(1)
+    scenes = _SCENE_RE.split(scene_body)
+
+    chunks: list[Chunk] = []
+    chunk_idx = 0
+    for i, scene in enumerate(scenes):
+        scene = scene.strip()
+        if not scene or len(scene) < 20:
+            continue
+        pieces = _split_long(scene, max_chars, CHUNK_OVERLAP)
+        for piece in pieces:
+            chunks.append(
+                Chunk(
+                    text=piece,
+                    chunk_index=chunk_idx,
+                    metadata={**metadata, "scene_index": i + 1},
+                )
+            )
+            chunk_idx += 1
+
+    # 如果场景序列为空，回退到 section 切分
+    if not chunks:
+        return chunk_by_section(text, metadata, max_chars)
+
+    return chunks
+
+
+_TABLE_ROW_RE = re.compile(r"^\|(.+)\|\s*$")
+
+
+def chunk_by_table_row(text: str, metadata: dict) -> list[Chunk]:
+    """按表格行切段，每行带表头上下文。
+
+    非表格部分按 section 切分。
+    用于：art-design.md（逐章情感表）、timeline.md。
+    """
+    cleaned = strip_frontmatter(text)
+    chunks: list[Chunk] = []
+    chunk_idx = 0
+
+    # 提取所有表格块
+    table_blocks = re.findall(r"((?:^\|.*\|[ \t]*\n?)+)", cleaned, re.MULTILINE)
+    table_positions: list[tuple[int, int]] = []
+
+    for block in table_blocks:
+        start = cleaned.find(block)
+        end = start + len(block)
+        table_positions.append((start, end))
+
+        rows = [l.strip() for l in block.splitlines() if l.strip().startswith("|")]
+        if len(rows) < 3:
+            continue
+        # 表头
+        header = rows[0]
+        header_cells = [c.strip() for c in header.split("|") if c.strip()]
+        # 跳过分隔行（rows[1]），从 rows[2] 开始
+        for row_line in rows[2:]:
+            cells = [c.strip() for c in row_line.split("|") if c.strip()]
+            if len(cells) < len(header_cells):
+                continue
+            # 构造带上下文的文本
+            row_text = " | ".join(
+                f"{h}: {c}" for h, c in zip(header_cells, cells)
+            )
+            chunks.append(
+                Chunk(
+                    text=row_text,
+                    chunk_index=chunk_idx,
+                    metadata={**metadata, "row_type": "table_row"},
+                )
+            )
+            chunk_idx += 1
+
+    # 非表格部分按 section 切分
+    non_table_parts: list[str] = []
+    last_end = 0
+    for start, end in sorted(table_positions):
+        between = cleaned[last_end:start].strip()
+        if between:
+            non_table_parts.append(between)
+        last_end = end
+    tail = cleaned[last_end:].strip()
+    if tail:
+        non_table_parts.append(tail)
+
+    for part in non_table_parts:
+        section_chunks = chunk_by_section(part, metadata)
+        for c in section_chunks:
+            c.chunk_index = chunk_idx
+            chunk_idx += 1
+            chunks.append(c)
+
+    return chunks
+
+
+# --------------------------------------------------------------------------- #
 # 文本读 + 章节文件路径
 # --------------------------------------------------------------------------- #
 
@@ -314,6 +489,18 @@ def _make_collection_schema(name: str, dim: int):
     elif name == "sources":
         fields.append(_ZVEC.FieldSchema("source_slug", _ZVEC.DataType.STRING))
         fields.append(_ZVEC.FieldSchema("workflow", _ZVEC.DataType.STRING, nullable=True))
+    elif name == "design":
+        fields.append(_ZVEC.FieldSchema("source", _ZVEC.DataType.STRING))
+        fields.append(_ZVEC.FieldSchema("file_stem", _ZVEC.DataType.STRING))
+        fields.append(_ZVEC.FieldSchema("section", _ZVEC.DataType.STRING, nullable=True))
+    elif name == "world":
+        fields.append(_ZVEC.FieldSchema("source", _ZVEC.DataType.STRING))
+        fields.append(_ZVEC.FieldSchema("file_stem", _ZVEC.DataType.STRING))
+        fields.append(_ZVEC.FieldSchema("section", _ZVEC.DataType.STRING, nullable=True))
+    elif name == "outlines":
+        fields.append(_ZVEC.FieldSchema("chapter", _ZVEC.DataType.INT64))
+        fields.append(_ZVEC.FieldSchema("source", _ZVEC.DataType.STRING))
+        fields.append(_ZVEC.FieldSchema("scene_index", _ZVEC.DataType.INT64, nullable=True))
 
     return _ZVEC.CollectionSchema(
         name=name,
@@ -338,9 +525,12 @@ class VectorStore:
     """对一组 zvec collection 的封装。
 
     collection layout：
-      <base>/chapters/
-      <base>/notes/
-      <base>/sources/
+      <base>/chapters/     — 章节正文
+      <base>/notes/        — 笔记摘要
+      <base>/sources/      — 源文本
+      <base>/design/       — 设计文件（genre-analysis, blueprint, style-guide, art-design, narrative-weave, characters）
+      <base>/world/        — 世界观文件（setting, rules, timeline）
+      <base>/outlines/     — 大纲文件（act-*.md, chapters/ch*.md）
 
     每个 collection 一旦以某种 dim 创建，后续必须用同 dim 的 provider 打开。
     """
@@ -496,6 +686,156 @@ class VectorStore:
             if force:
                 self._delete_ids_starting_with("sources", f"sources_{slug}_")
             total += self.index_chunks("sources", chunks, id_prefix=f"sources_{slug}_")
+        return total
+
+    # ---- design / world / outlines ----
+
+    def index_design_file(self, rel_path: str, force: bool = False) -> int:
+        """索引单个设计文件到 design collection。"""
+        root_path = self.base.parent.parent
+        path = root_path / rel_path
+        if not path.is_file():
+            raise VectorError(f"设计文件不存在：{path}")
+        text = path.read_text(encoding="utf-8")
+        from pathlib import PurePosixPath
+        stem = PurePosixPath(rel_path).stem
+        chunks = chunk_by_section(text, metadata={"source": rel_path, "file_stem": stem})
+        id_prefix = f"design_{stem}_"
+        if force:
+            self._delete_ids_starting_with("design", id_prefix)
+        return self.index_chunks("design", chunks, id_prefix=id_prefix)
+
+    def index_world_file(self, rel_path: str, force: bool = False) -> int:
+        """索引单个世界观文件到 world collection。"""
+        root_path = self.base.parent.parent
+        path = root_path / rel_path
+        if not path.is_file():
+            raise VectorError(f"世界观文件不存在：{path}")
+        text = path.read_text(encoding="utf-8")
+        from pathlib import PurePosixPath
+        stem = PurePosixPath(rel_path).stem
+        chunks = chunk_by_section(text, metadata={"source": rel_path, "file_stem": stem})
+        id_prefix = f"world_{stem}_"
+        if force:
+            self._delete_ids_starting_with("world", id_prefix)
+        return self.index_chunks("world", chunks, id_prefix=id_prefix)
+
+    def index_outline(self, chapter: int, force: bool = False) -> int:
+        """索引指定章节大纲到 outlines collection。"""
+        root_path = self.base.parent.parent
+        path = outline_file_path(root_path, chapter)
+        if not path.is_file():
+            raise VectorError(f"大纲文件不存在：{path}")
+        text = path.read_text(encoding="utf-8")
+        chunks = chunk_by_scene(
+            text,
+            metadata={"chapter": chapter, "source": str(path.relative_to(root_path))},
+        )
+        id_prefix = f"outline_ch{chapter:02d}_"
+        if force:
+            self._delete_ids_starting_with("outlines", id_prefix)
+        return self.index_chunks("outlines", chunks, id_prefix=id_prefix)
+
+    def index_design_all(self, force: bool = False) -> int:
+        """索引所有设计文件（通过 meta-index 发现）。"""
+        from lib.meta_index import get_files_by_vector_collection, load_meta_index, discover_project_files
+
+        root_path = self.base.parent.parent
+        total = 0
+
+        # 尝试从 meta-index 读取
+        meta = load_meta_index(root_path)
+        design_entries = []
+        for section in ("design_files", "world_files", "character_files"):
+            for entry_dict in meta.get(section, []):
+                if entry_dict.get("vector_collection") == "design":
+                    design_entries.append(entry_dict)
+
+        # 如果 meta-index 为空，回退到 discover
+        if not design_entries:
+            from lib.meta_index import FileEntry
+            all_files = discover_project_files(root_path)
+            design_entries = [e.to_dict() for e in all_files if e.vector_collection == "design"]
+
+        for entry in design_entries:
+            rel_path = entry.get("path", "")
+            if not rel_path:
+                continue
+            # 处理 glob 模式
+            if entry.get("glob"):
+                for f in sorted(root_path.glob(rel_path)):
+                    try:
+                        total += self.index_design_file(
+                            str(f.relative_to(root_path)).replace("\\", "/"), force=force
+                        )
+                    except VectorError as e:
+                        import sys
+                        sys.stderr.write(f"⚠ {rel_path}: {e}\n")
+            else:
+                try:
+                    total += self.index_design_file(rel_path, force=force)
+                except VectorError as e:
+                    import sys
+                    sys.stderr.write(f"⚠ {rel_path}: {e}\n")
+        return total
+
+    def index_world_all(self, force: bool = False) -> int:
+        """索引所有世界观文件。"""
+        from lib.meta_index import load_meta_index, discover_project_files
+
+        root_path = self.base.parent.parent
+        total = 0
+
+        meta = load_meta_index(root_path)
+        world_entries = []
+        for entry_dict in meta.get("world_files", []):
+            if entry_dict.get("vector_collection") == "world":
+                world_entries.append(entry_dict)
+
+        if not world_entries:
+            all_files = discover_project_files(root_path)
+            world_entries = [e.to_dict() for e in all_files if e.vector_collection == "world"]
+
+        for entry in world_entries:
+            rel_path = entry.get("path", "")
+            if not rel_path:
+                continue
+            try:
+                total += self.index_world_file(rel_path, force=force)
+            except VectorError as e:
+                import sys
+                sys.stderr.write(f"⚠ {rel_path}: {e}\n")
+        return total
+
+    def index_outlines_all(self, force: bool = False) -> int:
+        """索引所有大纲文件。"""
+        root_path = self.base.parent.parent
+        total = 0
+
+        # 幕级大纲
+        for f in sorted((root_path / "outline").glob("act-*.md")):
+            rel = str(f.relative_to(root_path)).replace("\\", "/")
+            stem = f.stem
+            text = f.read_text(encoding="utf-8")
+            chunks = chunk_by_section(text, metadata={"source": rel, "file_stem": stem})
+            id_prefix = f"outline_{stem}_"
+            if force:
+                self._delete_ids_starting_with("outlines", id_prefix)
+            total += self.index_chunks("outlines", chunks, id_prefix=id_prefix)
+
+        # 章节大纲
+        outline_dir = root_path / "outline" / "chapters"
+        if outline_dir.is_dir():
+            import re as _re
+            for f in sorted(outline_dir.glob("ch*.md")):
+                m = _re.match(r"ch(\d+)\.md", f.name)
+                if m:
+                    ch = int(m.group(1))
+                    try:
+                        total += self.index_outline(ch, force=force)
+                    except VectorError as e:
+                        import sys
+                        sys.stderr.write(f"⚠ outline ch{ch}: {e}\n")
         return total
 
     # ---- search ----

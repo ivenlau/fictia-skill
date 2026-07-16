@@ -317,6 +317,23 @@ class ItemExtractor:
 class ForeshadowingExtractor:
     """从 narrative-weave.md 的伏笔表提取伏笔实体。"""
 
+    # 标准列名（优先匹配）+ 兼容旧格式
+    _ID_KEYS = ("编号", "ID", "id")
+    _NAME_KEYS = ("名称", "伏笔名称", "name")
+    _TYPE_KEYS = ("类型", "type")
+    _PLANT_KEYS = ("埋设章节", "埋设位置", "埋设", "plant")
+    _SEED_KEYS = ("强化章节", "强化位置", "强化", "seed")
+    _RESOLVE_KEYS = ("回收章节", "回收位置", "计划回收", "resolve")
+    _DESC_KEYS = ("描述", "内容", "说明", "description")
+
+    def _get(self, row: dict, keys: tuple[str, ...]) -> str:
+        """从 row 中按优先级取值。"""
+        for k in keys:
+            v = row.get(k, "")
+            if v:
+                return v
+        return ""
+
     def extract(self, project_root: Path) -> list[EntityDoc]:
         weave_path = project_root / "narrative-weave.md"
         text = _read_file(weave_path)
@@ -334,18 +351,18 @@ class ForeshadowingExtractor:
             for block in table_blocks:
                 rows = _parse_md_table(block)
                 for row in rows:
-                    # 常见表头：编号、类型、描述、埋设章节、计划回收章节
-                    fo_id = row.get("编号", row.get("ID", row.get("id", "")))
-                    fo_type = row.get("类型", row.get("type", ""))
-                    fo_desc = row.get("描述", row.get("内容", row.get("说明", "")))
-                    fo_plant = row.get("埋设章节", row.get("埋设", row.get("plant", "")))
-                    fo_resolve = row.get("计划回收", row.get("回收章节", row.get("resolve", "")))
+                    fo_id = self._get(row, self._ID_KEYS)
+                    fo_name = self._get(row, self._NAME_KEYS)
+                    fo_type = self._get(row, self._TYPE_KEYS)
+                    fo_desc = self._get(row, self._DESC_KEYS)
+                    fo_plant = self._get(row, self._PLANT_KEYS)
+                    fo_seed = self._get(row, self._SEED_KEYS)
+                    fo_resolve = self._get(row, self._RESOLVE_KEYS)
 
                     if not fo_desc:
-                        # 尝试用所有值拼接
                         fo_desc = " ".join(row.values())
 
-                    name = fo_id or fo_desc[:20]
+                    name = fo_name or fo_id or fo_desc[:20]
                     slug = make_slug(name)
 
                     plant_ch = self._parse_chapter_num(fo_plant)
@@ -387,6 +404,19 @@ class ForeshadowingExtractor:
 class EasterEggExtractor:
     """从 narrative-weave.md 的彩蛋表提取彩蛋实体。"""
 
+    # 标准列名 + 兼容旧格式
+    _NAME_KEYS = ("名称", "编号", "ID", "id")
+    _TYPE_KEYS = ("类型", "type")
+    _DESC_KEYS = ("描述", "内容", "说明")
+    _TARGET_KEYS = ("位置", "揭示章节", "目标章节", "target")
+
+    def _get(self, row: dict, keys: tuple[str, ...]) -> str:
+        for k in keys:
+            v = row.get(k, "")
+            if v:
+                return v
+        return ""
+
     def extract(self, project_root: Path) -> list[EntityDoc]:
         weave_path = project_root / "narrative-weave.md"
         text = _read_file(weave_path)
@@ -403,10 +433,10 @@ class EasterEggExtractor:
             for block in table_blocks:
                 rows = _parse_md_table(block)
                 for row in rows:
-                    egg_name = row.get("名称", row.get("编号", row.get("ID", "")))
-                    egg_type = row.get("类型", row.get("type", ""))
-                    egg_desc = row.get("描述", row.get("内容", ""))
-                    egg_target = row.get("揭示章节", row.get("目标章节", row.get("target", "")))
+                    egg_name = self._get(row, self._NAME_KEYS)
+                    egg_type = self._get(row, self._TYPE_KEYS)
+                    egg_desc = self._get(row, self._DESC_KEYS)
+                    egg_target = self._get(row, self._TARGET_KEYS)
 
                     if not egg_desc:
                         egg_desc = " ".join(row.values())
@@ -447,6 +477,19 @@ class EasterEggExtractor:
 class StorylineExtractor:
     """从 narrative-weave.md 的支线表提取故事线实体。"""
 
+    # 标准列名 + 兼容旧格式
+    _NAME_KEYS = ("名称", "支线名称", "支线", "故事线", "name")
+    _TYPE_KEYS = ("类型", "type")
+    _DESC_KEYS = ("描述", "内容", "说明", "description")
+    _CHARS_KEYS = ("关联角色", "角色", "key_chars", "characters")
+
+    def _get(self, row: dict, keys: tuple[str, ...]) -> str:
+        for k in keys:
+            v = row.get(k, "")
+            if v:
+                return v
+        return ""
+
     def extract(self, project_root: Path) -> list[EntityDoc]:
         weave_path = project_root / "narrative-weave.md"
         text = _read_file(weave_path)
@@ -463,11 +506,11 @@ class StorylineExtractor:
             for block in table_blocks:
                 rows = _parse_md_table(block)
                 for row in rows:
-                    sl_name = row.get("名称", row.get("支线", row.get("故事线", "")))
-                    sl_type = row.get("类型", row.get("type", ""))
-                    sl_desc = row.get("描述", row.get("内容", row.get("说明", "")))
+                    sl_name = self._get(row, self._NAME_KEYS)
+                    sl_type = self._get(row, self._TYPE_KEYS)
+                    sl_desc = self._get(row, self._DESC_KEYS)
+                    sl_chars = self._get(row, self._CHARS_KEYS)
                     sl_priority = row.get("优先级", row.get("priority", ""))
-                    sl_chars = row.get("关联角色", row.get("角色", row.get("characters", "")))
 
                     if not sl_desc:
                         sl_desc = " ".join(row.values())
@@ -543,17 +586,24 @@ class EventExtractor:
                 if not scene or len(scene) < 20:
                     continue
 
-                # 提取场景目标
-                goal_match = re.search(r"场景目标[：:]\s*(.+)", scene)
+                # 提取场景目标（支持 "**场景目标**：" 和 "场景目标：" 两种格式）
+                goal_match = re.search(r"\*?\*?场景目标\*?\*?[：:]\s*(.+)", scene)
                 scene_goal = goal_match.group(1).strip() if goal_match else ""
 
-                # 提取地点
-                loc_match = re.search(r"地点[：:]\s*(.+)", scene)
+                # 提取地点（支持 "**地点**：" 和 "地点：" 两种格式）
+                loc_match = re.search(r"\*?\*?地点\*?\*?[：:]\s*(.+)", scene)
                 location = loc_match.group(1).strip() if loc_match else ""
 
-                # 提取参与角色
-                char_match = re.search(r"(?:角色|参与|人物)[：:]\s*(.+)", scene)
-                participants = char_match.group(1).strip() if char_match else ""
+                # 提取参与角色（支持 "**参与角色**：" 和 "角色："/"人物："/"参与：" 两种格式）
+                char_match = re.search(
+                    r"\*?\*?参与角色\*?\*?[：:]\s*(.+)|"
+                    r"(?:角色|人物|参与)[：:]\s*(.+)",
+                    scene,
+                )
+                if char_match:
+                    participants = (char_match.group(1) or char_match.group(2) or "").strip()
+                else:
+                    participants = ""
 
                 event_name = scene_goal or f"ch{chapter:02d}_场景{i+1}"
                 slug = make_slug(f"ch{chapter:02d}_s{i+1}_{event_name[:10]}")

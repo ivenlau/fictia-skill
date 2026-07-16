@@ -126,10 +126,16 @@
 
 在第 8 步（前章完整正文）之后、第 9 步之前，可追加：
 
-8.5. **语义检索**（需先启用 RAG；章节大纲就绪与正文定稿时自动索引）：
-   - 命令：`fictia ctx semantic-search "<本章核心场景关键词>" --chapter N --top-k 8`
-   - 输出：markdown 格式的 top-k 相关 chunk，含章节号、score、原文片段
-   - 用于补强：跨章节人物/事件回溯、伏笔 callback 检索、风格参照
+8.5. **语义检索**（需先启用 RAG；`fictia vector index-all` 索引后可用）：
+   - 章节正文检索：`fictia ctx semantic-search "<query>" --chapter N --top-k 8`
+   - 设计文件检索：`fictia ctx semantic-search "<query>" --collection design --top-k 5`
+     （搜索 genre-analysis / blueprint / style-guide / art-design / narrative-weave / characters）
+   - 世界观检索：`fictia ctx semantic-search "<query>" --collection world --top-k 5`
+     （搜索 world/setting / world/rules / world/timeline）
+   - 大纲检索：`fictia ctx semantic-search "<query>" --collection outlines --top-k 5`
+     （搜索 act-*.md / outline/chapters/ch*.md）
+   - 跨全库检索：`fictia ctx semantic-search "<query>" --top-k 8`（不指定 collection）
+   - 用于补强：跨章节人物/事件回溯、伏笔 callback 检索、风格参照、设定查询
    - 不依赖 agent 主动调用；如果 agent 觉得不需要，可跳过此步
 
 ## 编辑审核上下文组装

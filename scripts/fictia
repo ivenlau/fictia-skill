@@ -461,6 +461,71 @@ def cmd_brainstorm_mode(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_meta(args: argparse.Namespace) -> int:
+    """Meta Index — 产出文件注册表管理。"""
+    root = _resolve_root(args)
+    sub = args.meta_cmd
+
+    if sub == "init":
+        from lib.meta_index import init_meta_index
+        result = init_meta_index(root)
+        print(f"✓ meta-index.yaml 已生成：{result['total']} 个文件（{result['indexable']} 个可索引）")
+        print(f"  路径：{result['path']}")
+        return 0
+
+    if sub == "sync":
+        from lib.meta_index import sync_meta_index
+        result = sync_meta_index(root)
+        added = result["added"]
+        updated = result["updated"]
+        removed = result["removed"]
+        unchanged = result["unchanged"]
+        print(f"✓ meta-index 同步完成：")
+        if added:
+            print(f"  + 新增 {len(added)} 个文件：{', '.join(added)}")
+        if updated:
+            print(f"  ~ 变更 {len(updated)} 个文件：{', '.join(updated)}")
+        if removed:
+            print(f"  - 移除 {len(removed)} 个文件：{', '.join(removed)}")
+        print(f"  = 未变 {unchanged} 个文件")
+        return 0
+
+    if sub == "status":
+        from lib.meta_index import load_meta_index, get_indexable_files
+        data = load_meta_index(root)
+        if not data.get("last_sync"):
+            print("meta-index.yaml 未初始化，请先运行 `fictia meta init`")
+            return 0
+        print(f"version: {data.get('version')}")
+        print(f"last_sync: {data.get('last_sync')}")
+        print()
+        for section in (
+            "design_files", "world_files", "character_files",
+            "outline_files", "chapter_files", "review_files", "auxiliary_files",
+        ):
+            items = data.get(section, [])
+            if items:
+                indexable = sum(1 for e in items if e.get("indexable"))
+                print(f"  {section}: {len(items)} 个文件（{indexable} 个可索引）")
+        indexable_all = get_indexable_files(root)
+        print(f"\n  可索引文件总计: {len(indexable_all)}")
+        return 0
+
+    if sub == "stale":
+        from lib.meta_index import get_stale_files
+        stale = get_stale_files(root)
+        if not stale:
+            print("所有文件均为最新，无需重新索引。")
+            return 0
+        print(f"以下 {len(stale)} 个文件内容已变化，需要重新索引：")
+        for e in stale:
+            print(f"  {e.path} (v{e.version}, {e.vector_collection})")
+        return 0
+
+    sys.stderr.write("用法: meta init|sync|status|stale\n")
+    return 2
+
+
 def cmd_source(args: argparse.Namespace) -> int:
     root = _resolve_root(args)
     if args.sub == "import":
@@ -1077,6 +1142,30 @@ def cmd_vector(args: argparse.Namespace) -> int:
                 total += fn(force=args.force)
             except V.VectorError as e:
                 sys.stderr.write(f"⚠ {label}: {e}\n")
+        # 索引设计文件（通过 meta-index 发现）
+        try:
+            n = store.index_design_all(force=args.force)
+            total += n
+            if n > 0:
+                print(f"✓ design: indexed {n} chunks")
+        except V.VectorError as e:
+            sys.stderr.write(f"⚠ design: {e}\n")
+        # 索引世界观文件
+        try:
+            n = store.index_world_all(force=args.force)
+            total += n
+            if n > 0:
+                print(f"✓ world: indexed {n} chunks")
+        except V.VectorError as e:
+            sys.stderr.write(f"⚠ world: {e}\n")
+        # 索引大纲文件
+        try:
+            n = store.index_outlines_all(force=args.force)
+            total += n
+            if n > 0:
+                print(f"✓ outlines: indexed {n} chunks")
+        except V.VectorError as e:
+            sys.stderr.write(f"⚠ outlines: {e}\n")
         # 索引所有已写章节
         for ch in range(1, 200):
             p = V.chapter_file_path(root, ch)
@@ -1090,6 +1179,33 @@ def cmd_vector(args: argparse.Namespace) -> int:
                 if ch > 1:
                     break
         print(f"✓ index-all: total {total} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "index-design":
+        try:
+            n = store.index_design_all(force=args.force)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ design: indexed {n} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "index-world":
+        try:
+            n = store.index_world_all(force=args.force)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ world: indexed {n} chunks" + (" (force)" if args.force else ""))
+        return 0
+
+    if sub_cmd == "index-outlines":
+        try:
+            n = store.index_outlines_all(force=args.force)
+        except V.VectorError as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        print(f"✓ outlines: indexed {n} chunks" + (" (force)" if args.force else ""))
         return 0
 
     if sub_cmd == "search":
@@ -1455,6 +1571,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_consistency.add_argument("--chapter", required=True, help="已通过一致性校验的章节号")
     p_consistency.set_defaults(func=cmd_consistency)
 
+    # meta（产出文件注册表）
+    p_meta = sub.add_parser("meta", help="产出文件注册表管理（meta-index.yaml）")
+    p_meta.add_argument("meta_cmd", choices=["init", "sync", "status", "stale"],
+                        help="子操作：init=首次生成，sync=增量更新，status=查看状态，stale=列出需重索引的文件")
+    p_meta.set_defaults(func=cmd_meta)
+
     # source
     p_source = sub.add_parser("source", help="源文本素材管理（epub/txt/md）")
     p_source.add_argument("sub", choices=["import", "list"], help="子操作")
@@ -1480,14 +1602,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_ctx.add_argument("--role", choices=["writer", "editor", "consistency"], help="assemble 用的角色")
     p_ctx.add_argument("--query", help="semantic-search 用的查询语句（也可作位置参数）")
     p_ctx.add_argument("--top-k", type=int, default=8, help="semantic-search 命中数（默认 8）")
-    p_ctx.add_argument("--collection", choices=["chapters", "notes", "sources"],
+    p_ctx.add_argument("--collection",
+                       choices=["chapters", "notes", "sources", "design", "world", "outlines"],
                        help="semantic-search 限定 collection")
     p_ctx.set_defaults(func=cmd_ctx)
 
     # vector（RAG / 跨章节语义检索）
+    _vec_collections = ["chapters", "notes", "sources", "design", "world", "outlines"]
     p_vec = sub.add_parser("vector", help="向量检索管理（zvec + embedding）")
     p_vec.add_argument("vec_cmd",
                        choices=["index-chapter", "index-notes", "index-source", "index-all",
+                                "index-design", "index-world", "index-outlines",
                                 "search", "status", "clear"],
                        help="子操作")
     p_vec.add_argument("--chapter", "-c", help="index-chapter 用的章节号")
@@ -1495,7 +1620,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_vec.add_argument("--force", action="store_true", help="强制重建（删除旧条目后重新索引）")
     p_vec.add_argument("--query", help="search 用的查询语句")
     p_vec.add_argument("--top-k", type=int, default=8, help="search 命中数（默认 8）")
-    p_vec.add_argument("--collection", choices=["chapters", "notes", "sources"],
+    p_vec.add_argument("--collection", choices=_vec_collections,
                        help="search/clear 限定 collection")
     p_vec.add_argument("--yes", action="store_true", help="clear 不加确认（用于批量脚本）")
     p_vec.set_defaults(func=cmd_vector)

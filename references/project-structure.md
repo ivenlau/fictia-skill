@@ -186,3 +186,78 @@ language_style: "简洁克制，偶尔锋利"
 | 一致性问题 | `reviews/consistency-report.md` → 问题列表 |
 | 用户笔记原始记录 | `notes/raw.md` |
 | 用户笔记蒸馏摘要 | `notes/summary.md`（章节写作时自动加载） |
+
+## Meta Index（产出文件注册表）
+
+项目根目录的 `meta-index.yaml` 声明所有 agent 产出文件的元数据，供向量索引和实体提取器使用。
+
+```bash
+fictia meta init      # 首次生成（扫描项目文件）
+fictia meta sync      # 增量更新（检测内容变化）
+fictia meta status    # 查看注册表状态
+fictia meta stale     # 列出需要重新索引的文件
+```
+
+文件结构示例：
+```yaml
+version: 2
+last_sync: "2026-07-16T10:00:00Z"
+design_files:
+  - path: "genre-analysis.md"
+    stage: "genre_analysis"
+    indexable: true
+    chunk_strategy: "section"
+    vector_collection: "design"
+    content_hash: "sha256:abcdef1234567890"
+```
+
+## 标准化表格 Schema
+
+所有 agent 产出文件中的结构化数据表格**必须**使用以下标准列名。提取器（`entity_extractors.py`）按这些列名解析。
+
+### 伏笔表（foreshadowing）
+```markdown
+| 编号 | 名称 | 类型 | 埋设章节 | 强化章节 | 回收章节 | 描述 |
+```
+- 编号：格式 `F01`, `F02`...（大写 F + 两位数字）
+- 类型：`明伏笔 | 暗伏笔 | 结构性伏笔 | 反向伏笔 | 主题伏笔`
+- 埋设/强化/回收章节：格式 `ch03` 或 `ch03, ch08`（多个用逗号分隔）
+
+### 支线表（storylines）
+```markdown
+| 编号 | 名称 | 类型 | 起始章节 | 结束章节 | 关联角色 | 描述 |
+```
+- 编号：格式 `S01`, `S02`...
+- 类型：`人物 | 世界观 | 情感 | 悬念 | 主题`
+- 关联角色：逗号分隔的角色名
+
+### 彩蛋表（easter_eggs）
+```markdown
+| 编号 | 名称 | 类型 | 位置 | 触发条件 | 描述 |
+```
+- 编号：格式 `E01`, `E02`...
+- 类型：`致敬 | 元叙事 | 细节 | 互文 | 读者互动`
+
+### 时间线表（timeline）
+```markdown
+| 时间 | 事件 | 影响 | 与故事关联 |
+```
+
+### 角色 front-matter relationships 字段
+必须使用 dict 格式：
+```yaml
+relationships:
+  - name: "角色名"
+    relation: "关系描述"
+    dynamic: "关系发展轨迹"
+```
+
+### 章节大纲场景格式
+场景内定位字段必须使用独立行格式（不混合斜杠）：
+```markdown
+- **地点**：[具体场所]
+- **时间**：[时辰/时间段]
+- **POV**：[视角角色名]
+- **参与角色**：[角色名列表，逗号分隔]
+- **场景目标**：[目标描述]
+```

@@ -164,7 +164,7 @@ class ServerEmbedding:
         resp = httpx.post(
             f"{self._url}/embed",
             json={"texts": list(texts)},
-            timeout=30,
+            timeout=120,
         )
         resp.raise_for_status()
         return resp.json()["vectors"]

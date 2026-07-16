@@ -39,6 +39,7 @@ fictia words <file>...         统计字数（自动剥离写作备注）
 fictia judge <actual> <target> 字数判定
 fictia milestone               检查章节里程碑（每 5 章）
 fictia consistency confirm     记录一致性校验通过的章节
+fictia meta init|sync|status   产出文件注册表管理（meta-index.yaml）
 fictia source import <file>    导入改写/仿写/续写源文本（epub/txt/md）
 fictia source list             列出已导入源文本
 fictia ctx <program> [...]     上下文压缩与组装
@@ -65,6 +66,27 @@ fictia source list
 ```
 
 支持格式：`.epub`、`.txt`、`.md`。`ctx assemble writer/editor/consistency` 会自动把已导入源文本摘要加入上下文。
+
+## meta 子命令详解
+
+产出文件注册表管理（`meta-index.yaml`），供向量索引和实体提取器自动发现文件。
+
+```bash
+fictia meta init       # 首次生成（扫描项目目录，创建 meta-index.yaml）
+fictia meta sync       # 增量更新（检测文件内容变化，递增 version）
+fictia meta status     # 查看注册表状态（各类型文件数量）
+fictia meta stale      # 列出需要重新索引的文件（content_hash 不匹配）
+```
+
+`meta-index.yaml` 记录每个产出文件的：
+- `path`：相对路径
+- `stage`：所属流水线阶段
+- `indexable`：是否需要向量索引
+- `chunk_strategy`：切分策略（section / paragraph / scene / table_row）
+- `vector_collection`：写入哪个向量 collection（design / world / outlines / chapters / notes / sources）
+- `entity_collections`：涉及哪些实体类型
+- `content_hash`：内容摘要（用于增量检测）
+- `version`：内容版本号
 
 ## ctx 子命令详解
 
@@ -146,7 +168,10 @@ fictia status                         # 题材分析应为 [✓]
 fictia vector index-chapter --chapter N    # 手动索引单章
 fictia vector index-notes                  # 索引笔记摘要
 fictia vector index-source                 # 索引源文本
-fictia vector index-all                    # 索引全部
+fictia vector index-design                 # 索引设计文件（genre-analysis/blueprint/style-guide/art-design/narrative-weave/characters）
+fictia vector index-world                  # 索引世界观文件（setting/rules/timeline）
+fictia vector index-outlines               # 索引大纲文件（act-*.md, chapters/ch*.md）
+fictia vector index-all                    # 索引全部（含上述所有）
 ```
 
 > **自动索引**：执行 `fictia stage chapter outline --chapter N` 与 `fictia consistency confirm --chapter N` 时会自动索引对应章节，无需手动调用。
