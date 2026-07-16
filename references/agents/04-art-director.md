@@ -70,6 +70,10 @@
 - 读取 `genre-analysis.md` 获取题材分析
 - 读取 `blueprint.md` 获取结构设计
 - 读取 `style-guide.md` 获取风格指南
+- 如 `project.yaml.source_material` 存在：
+  - **续写（continuation）**：延续源文本的意象体系和情感节拍模式。分析源文本末尾的情感状态，在新章节中自然延续。
+  - **改写（rewrite）**：可重新设计意象体系，但保留核心意象的戏剧功能。
+  - **仿写（imitation）**：不参考源文本意象，独立设计全新艺术方案。
 
 # 输出规范
 使用 Write 工具将产出写入 `art-design.md`，结构如下：

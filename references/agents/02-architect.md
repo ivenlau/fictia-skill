@@ -78,6 +78,10 @@
 - 读取 `project.yaml` 获取目标字数、卷数等配置
 - 读取 `genre-analysis.md` 获取题材分析结果
 - 如有用户提供的故事梗概或偏好说明，直接使用
+- 如 `project.yaml.source_material` 存在，读取 `sources/*.md`：
+  - **续写（continuation）**：分析源文本的已有卷章结构，新结构从断点处延续。不重新划分已有章节。
+  - **改写（rewrite）**：参考原作的卷章划分和节奏曲线，但可以重新设计结构。保留核心转折点位置。
+  - **仿写（imitation）**：不参考源文本结构，独立设计全新架构。
 
 # 输出规范
 使用 Write 工具将产出写入 `blueprint.md`，结构如下：

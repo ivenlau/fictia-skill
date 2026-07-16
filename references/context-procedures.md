@@ -148,7 +148,7 @@
 4. 叙事编织摘要（`buildNarrativeWeaveSummary`）
 5. 世界观速查（`buildWorldQuickRef`）
 6. 角色速查表（`buildCharacterRegistry`）
-7. 源文本参考（改写/仿写/续写项目）
+7. 源文本参考（`build_source_context`，按 workflow 自动分支：rewrite→情节骨架，imitation→风格指纹，continuation→断点上下文）
 8. 用户笔记摘要（`notes/summary.md`，存在即加载）
 
 ## 一致性校验上下文组装
