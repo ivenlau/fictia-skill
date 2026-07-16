@@ -27,6 +27,7 @@ ENTITY_COLLECTIONS = (
     "easter_eggs",
     "storylines",
     "timeline",
+    "relations",
 )
 
 
@@ -98,6 +99,12 @@ class TimelineState(str, Enum):
     FORESHADOWED = "foreshadowed"
 
 
+class RelationsState(str, Enum):
+    ACTIVE = "active"
+    CHANGED = "changed"
+    DISSOLVED = "dissolved"
+
+
 # collection → 状态枚举映射
 STATE_ENUMS: dict[str, type] = {
     "characters": CharacterState,
@@ -108,6 +115,7 @@ STATE_ENUMS: dict[str, type] = {
     "easter_eggs": EasterEggState,
     "storylines": StorylineState,
     "timeline": TimelineState,
+    "relations": RelationsState,
 }
 
 
@@ -183,6 +191,10 @@ VALID_TRANSITIONS: dict[str, dict[str, list[str]]] = {
         TimelineState.CURRENT: [TimelineState.PAST],
         TimelineState.FORESHADOWED: [TimelineState.CURRENT, TimelineState.PAST],
     },
+    "relations": {
+        RelationsState.ACTIVE: [RelationsState.CHANGED, RelationsState.DISSOLVED],
+        RelationsState.CHANGED: [RelationsState.ACTIVE, RelationsState.DISSOLVED],
+    },
 }
 
 
@@ -219,6 +231,36 @@ class EntityDoc:
             raise ValueError(
                 f"未知 collection: {self.collection}；可选：{ENTITY_COLLECTIONS}"
             )
+
+
+# --------------------------------------------------------------------------- #
+# 关系类型
+# --------------------------------------------------------------------------- #
+
+RELATION_TYPES = (
+    # 角色间关系
+    "friend",        # 朋友
+    "enemy",         # 敌人
+    "mentor",        # 师徒（导师方）
+    "apprentice",    # 师徒（学徒方）
+    "family",        # 家族/血缘
+    "lover",         # 恋人
+    "ally",          # 盟友
+    "rival",         # 对手
+    "protects",      # 守护
+    "serves",        # 侍奉/效忠
+    "controls",      # 控制/支配
+    # 实体间关系
+    "located_at",    # 位于
+    "owns",          # 持有/拥有
+    "participates",  # 参与（事件）
+    "causes",        # 导致（事件因果）
+    "affects",       # 影响
+    "reveals",       # 揭示（伏笔）
+    "belongs_to",    # 属于（故事线）
+    "key_char",      # 关键角色（故事线）
+    "related_to",    # 通用关联
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -283,6 +325,13 @@ COLLECTION_EXTRA_FIELDS: dict[str, list[tuple[str, str]]] = {
         ("chapter", "INT64"),
         ("era", "STRING"),
     ],
+    "relations": [
+        ("source_id", "STRING"),
+        ("target_id", "STRING"),
+        ("rel_type", "STRING"),
+        ("chapter", "INT64"),
+        ("confidence", "STRING"),
+    ],
 }
 
 
@@ -306,6 +355,7 @@ _COLLECTION_PREFIX: dict[str, str] = {
     "easter_eggs": "egg",
     "storylines": "arc",
     "timeline": "tl",
+    "relations": "rel",
 }
 
 
@@ -355,3 +405,39 @@ def make_slug(name: str) -> str:
         return h
     # 截断到 8 字符 + hash 后缀
     return f"{clean[:8]}_{h}"
+
+
+# --------------------------------------------------------------------------- #
+# 关系 ID 工具
+# --------------------------------------------------------------------------- #
+
+
+def make_relation_slug(source_id: str, rel_type: str, target_id: str) -> str:
+    """从 (source, rel_type, target) 生成稳定的 slug。"""
+    import hashlib
+
+    raw = f"{source_id}|{rel_type}|{target_id}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def make_relation_id(
+    source_id: str, rel_type: str, target_id: str, version: int = 1
+) -> str:
+    """构造关系文档 id。
+
+    格式: "rel_{hash16}_v{version:03d}"
+    """
+    slug = make_relation_slug(source_id, rel_type, target_id)
+    return f"rel_{slug}_v{version:03d}"
+
+
+def parse_relation_id(relation_id: str) -> tuple[str, int]:
+    """解析关系 id → (slug, version)。"""
+    prefix = "rel_"
+    if not relation_id.startswith(prefix):
+        return (relation_id, 0)
+    rest = relation_id[len(prefix):]
+    parts = rest.rsplit("_v", 1)
+    if len(parts) != 2 or not parts[1].isdigit():
+        return (rest, 0)
+    return (parts[0], int(parts[1]))

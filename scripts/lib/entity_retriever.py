@@ -176,11 +176,15 @@ class EntityRetriever:
     def _expand_related(
         self, collection: str, seeds: list[dict]
     ) -> list[dict]:
-        """从种子实体的 related 字段展开关联实体。"""
-        related_slugs: set[str] = set()
+        """从种子实体展开关联实体（双源：related 字段 + 知识图谱）。"""
         seed_ids: set[str] = {d.get("id", "") for d in seeds}
+        related_slugs: set[str] = set()
+        graph_related_ids: set[str] = set()
 
         for seed in seeds:
+            seed_id = seed.get("id", "")
+
+            # 来源 1：related 字段（原有逻辑）
             related_str = seed.get("related", "")
             if related_str:
                 for slug in related_str.split(","):
@@ -188,16 +192,49 @@ class EntityRetriever:
                     if slug:
                         related_slugs.add(slug)
 
-        if not related_slugs:
-            return []
+            # 来源 2：知识图谱邻居查询
+            try:
+                neighbors = self.store.get_neighbors(seed_id)
+                for nb in neighbors:
+                    nb_id = nb["neighbor_id"]
+                    if nb_id not in seed_ids:
+                        graph_related_ids.add(nb_id)
+            except Exception:
+                pass  # relations collection 可能不存在
 
-        # 按名称查询关联实体
-        results = self.store.search_entities_by_names(
-            collection, list(related_slugs)
-        )
+        results: list[dict] = []
 
-        # 过滤掉已经是种子的实体
-        return [r for r in results if r.get("id", "") not in seed_ids]
+        # 按名称查询 related 字段的关联实体
+        if related_slugs:
+            name_results = self.store.search_entities_by_names(
+                collection, list(related_slugs)
+            )
+            results.extend(name_results)
+
+        # 按 id 查询图谱关联实体
+        if graph_related_ids:
+            for entity_id in graph_related_ids:
+                # 推断 collection
+                from lib.entity_schema import parse_entity_id
+                prefix, slug, _ = parse_entity_id(entity_id)
+                # 尝试在目标 collection 中查找
+                try:
+                    entity = self.store.get_entity(collection, entity_id)
+                    if entity and entity.get("id", "") not in seed_ids:
+                        results.append(entity)
+                except Exception:
+                    pass
+
+        # 去重
+        seen: set[str] = set()
+        deduped: list[dict] = []
+        for r in results:
+            rid = r.get("id", "")
+            if rid and rid not in seen and rid not in seed_ids:
+                seen.add(rid)
+                deduped.append(r)
+
+        return deduped
 
     def _retrieve_timeline_window(
         self, chapter: int, window: int = 3

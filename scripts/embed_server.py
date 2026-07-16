@@ -1,4 +1,4 @@
-"""常驻 BGE-M3 Embedding + Entity 服务。
+"""常驻 BGE-M3 Embedding + Entity + 知识图谱服务。
 
 启动后模型只加载一次，entity collection 一次打开，后续请求走 HTTP，毫秒级响应。
 
@@ -9,7 +9,16 @@ API：
     POST /embed           {"texts": ["文本1", "文本2"]}  → {"vectors": [[...], [...]]}
     POST /search          {"query": "查询", "collection": "chapters", "top_k": 5} → {"results": [...]}
     POST /entity/search   {"query": "查询", "collection": "characters", "top_k": 5} → {"results": [...]}
+    POST /entity/writing-space  {"chapter": 3}  → {"content": "..."}
     GET  /health          → {"status": "ok", "dim": 1024}
+
+知识图谱 API：
+    POST /graph/build     从现有实体字段构建知识图谱（幂等）
+    POST /graph/extract   {"chapter": 3, "use_llm": true}  → 从章节抽取关系
+    POST /graph/neighbors {"entity_id": "char_xxx"}  → 邻居查询
+    POST /graph/path      {"from_id": "A", "to_id": "B"}  → 最短路径
+    POST /graph/triples   {"query": "师徒关系"}  → 语义搜索关系
+    POST /graph/export    {"entity_id": "char_xxx"}  → 导出图谱数据（可视化）
 """
 
 import argparse
@@ -268,6 +277,317 @@ def entity_writing_space(req: WritingSpaceRequest):
         return WritingSpaceResponse(content=content)
     except Exception as e:
         return WritingSpaceResponse(content=f"（组装失败：{e}）")
+
+
+# --------------------------------------------------------------------------- #
+# 知识图谱 API
+# --------------------------------------------------------------------------- #
+
+
+class GraphNeighborRequest(BaseModel):
+    entity_id: str
+    rel_type: str | None = None
+    depth: int = 1
+
+
+class GraphNeighborResult(BaseModel):
+    neighbor_id: str
+    rel_type: str
+    direction: str
+    relation_text: str
+    relation_id: str
+    chapter: int | None = None
+    confidence: str = "1.0"
+
+
+class GraphNeighborResponse(BaseModel):
+    entity_id: str
+    neighbors: list[GraphNeighborResult]
+
+
+@app.post("/graph/neighbors", response_model=GraphNeighborResponse)
+def graph_neighbors(req: GraphNeighborRequest):
+    store = get_entity_store()
+    if store is None:
+        return GraphNeighborResponse(entity_id=req.entity_id, neighbors=[])
+
+    neighbors = store.get_neighbors(
+        req.entity_id, rel_type=req.rel_type, depth=req.depth
+    )
+    return GraphNeighborResponse(
+        entity_id=req.entity_id,
+        neighbors=[GraphNeighborResult(**nb) for nb in neighbors],
+    )
+
+
+class GraphPathRequest(BaseModel):
+    from_id: str
+    to_id: str
+    max_depth: int = 3
+
+
+class GraphPathResponse(BaseModel):
+    found: bool
+    path: list[dict] = []
+
+
+@app.post("/graph/path", response_model=GraphPathResponse)
+def graph_path(req: GraphPathRequest):
+    store = get_entity_store()
+    if store is None:
+        return GraphPathResponse(found=False)
+
+    path = store.find_path(req.from_id, req.to_id, max_depth=req.max_depth)
+    if path is None:
+        return GraphPathResponse(found=False)
+    return GraphPathResponse(found=True, path=path)
+
+
+class GraphTriplesRequest(BaseModel):
+    query: str
+    entity_id: str | None = None
+    rel_type: str | None = None
+    top_k: int = 10
+
+
+class GraphTripleResult(BaseModel):
+    source_id: str
+    target_id: str
+    rel_type: str
+    text: str
+    score: float = 0.0
+    chapter: int | None = None
+
+
+class GraphTriplesResponse(BaseModel):
+    results: list[GraphTripleResult]
+
+
+@app.post("/graph/triples", response_model=GraphTriplesResponse)
+def graph_triples(req: GraphTriplesRequest):
+    store = get_entity_store()
+    if store is None:
+        return GraphTriplesResponse(results=[])
+
+    results = store.search_relations(
+        req.query,
+        top_k=req.top_k,
+        entity_id=req.entity_id,
+        rel_type=req.rel_type,
+    )
+    return GraphTriplesResponse(
+        results=[
+            GraphTripleResult(
+                source_id=r.get("source_id", ""),
+                target_id=r.get("target_id", ""),
+                rel_type=r.get("rel_type", ""),
+                text=r.get("text", ""),
+                score=r.get("score", 0.0),
+                chapter=r.get("chapter"),
+            )
+            for r in results
+        ]
+    )
+
+
+class GraphBuildRequest(BaseModel):
+    pass
+
+
+class GraphBuildResponse(BaseModel):
+    relations_added: int
+
+
+@app.post("/graph/build", response_model=GraphBuildResponse)
+def graph_build():
+    """从现有实体字段构建知识图谱（幂等，跳过已存在的关系）。"""
+    store = get_entity_store()
+    if store is None:
+        return GraphBuildResponse(relations_added=0)
+
+    project_root = _find_project_root()
+    if not project_root:
+        return GraphBuildResponse(relations_added=0)
+
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from lib.relation_extractors import build_knowledge_graph
+
+        count = build_knowledge_graph(store, project_root)
+        return GraphBuildResponse(relations_added=count)
+    except Exception as e:
+        print(f"[embed-server] graph build failed: {e}", flush=True)
+        return GraphBuildResponse(relations_added=0)
+
+
+class GraphExtractRequest(BaseModel):
+    chapter: int
+    use_llm: bool = False  # 是否使用 LLM 抽取
+    llm_model: str = "gpt-4o-mini"  # LLM 模型
+
+
+class GraphExtractResponse(BaseModel):
+    relations_added: int
+    source: str  # "notes" | "llm" | "both"
+    llm_queued: bool = False  # LLM 抽取是否已加入后台队列
+
+
+@app.post("/graph/extract", response_model=GraphExtractResponse)
+def graph_extract(req: GraphExtractRequest, background_tasks: BackgroundTasks = None):
+    """从已完成章节中提取新关系（规则抽取 + 可选 LLM）。"""
+    from fastapi import BackgroundTasks
+
+    store = get_entity_store()
+    if store is None:
+        return GraphExtractResponse(relations_added=0, source="none")
+
+    project_root = _find_project_root()
+    if not project_root:
+        return GraphExtractResponse(relations_added=0, source="none")
+
+    total = 0
+    source_parts = []
+    chapter_text = ""
+
+    # 1. 规则抽取（从写作备注）
+    try:
+        sys.path.insert(0, str(Path(__file__).parent))
+        from lib.entity_updater import extract_relations_from_chapter_notes
+
+        # 查找章节文件
+        ch_dir = project_root / "chapters"
+        candidates = list(ch_dir.glob(f"ch{req.chapter:02d}*.md")) if ch_dir.is_dir() else []
+        if not candidates:
+            ch_dir = project_root / "chapters" / "drafts"
+            candidates = list(ch_dir.glob(f"ch{req.chapter:02d}*.md")) if ch_dir.is_dir() else []
+
+        if candidates:
+            chapter_text = candidates[0].read_text(encoding="utf-8")
+            note_triples = extract_relations_from_chapter_notes(
+                chapter_text, req.chapter
+            )
+            if note_triples:
+                count = store.upsert_relations(note_triples, chapter=req.chapter)
+                total += count
+                source_parts.append(f"notes:{count}")
+    except Exception as e:
+        print(f"[embed-server] note extraction failed: {e}", flush=True)
+
+    # 2. LLM 抽取（后台异步执行）
+    llm_queued = False
+    if req.use_llm and chapter_text:
+        try:
+            import asyncio
+            from lib.llm_relation_extractor import extract_and_store_relations_via_llm
+
+            async def _llm_extract_task():
+                try:
+                    count = await extract_and_store_relations_via_llm(
+                        store, chapter_text, req.chapter, model=req.llm_model
+                    )
+                    print(
+                        f"[embed-server] LLM extraction done: {count} relations",
+                        flush=True,
+                    )
+                except Exception as e:
+                    print(f"[embed-server] LLM extraction failed: {e}", flush=True)
+
+            # 在后台线程中运行异步任务
+            import threading
+
+            def _run_async():
+                asyncio.run(_llm_extract_task())
+
+            thread = threading.Thread(target=_run_async, daemon=True)
+            thread.start()
+            llm_queued = True
+            source_parts.append("llm:queued")
+        except Exception as e:
+            print(f"[embed-server] LLM task launch failed: {e}", flush=True)
+
+    source = "+".join(source_parts) if source_parts else "none"
+    return GraphExtractResponse(
+        relations_added=total, source=source, llm_queued=llm_queued
+    )
+
+
+class GraphExportRequest(BaseModel):
+    entity_id: str | None = None
+    rel_type: str | None = None
+    max_nodes: int = 200
+
+
+class GraphExportResponse(BaseModel):
+    nodes: list[dict]
+    edges: list[dict]
+
+
+@app.post("/graph/export", response_model=GraphExportResponse)
+def graph_export(req: GraphExportRequest):
+    """导出图谱数据（nodes + edges），用于可视化。"""
+    store = get_entity_store()
+    if store is None:
+        return GraphExportResponse(nodes=[], edges=[])
+
+    # 获取关系
+    if req.entity_id:
+        relations = store.list_relations(
+            entity_id=req.entity_id, rel_type=req.rel_type
+        )
+    else:
+        relations = store.list_relations(rel_type=req.rel_type)
+
+    # 限制数量
+    relations = relations[:req.max_nodes]
+
+    # 收集节点 id
+    node_ids: set[str] = set()
+    edges = []
+    for rel in relations:
+        src = rel.get("source_id", "")
+        tgt = rel.get("target_id", "")
+        node_ids.add(src)
+        node_ids.add(tgt)
+        edges.append({
+            "source": src,
+            "target": tgt,
+            "rel_type": rel.get("rel_type", ""),
+            "text": rel.get("text", ""),
+            "chapter": rel.get("chapter"),
+        })
+
+    # 构建节点信息
+    nodes = []
+    for nid in node_ids:
+        # 从 id 推断 collection
+        parts = nid.split("_", 1)
+        prefix = parts[0] if parts else ""
+        collection = _prefix_to_collection(prefix)
+
+        # 尝试获取实体名称
+        name = nid
+        if collection:
+            try:
+                entity = store.get_entity(collection, nid)
+                if entity:
+                    name = entity.get("name", nid)
+            except Exception:
+                pass
+
+        nodes.append({
+            "id": nid,
+            "name": name,
+            "collection": collection or "unknown",
+        })
+
+    return GraphExportResponse(nodes=nodes, edges=edges)
+
+
+def _prefix_to_collection(prefix: str) -> str:
+    """从前缀推断 collection 名称。"""
+    from lib.entity_schema import _COLLECTION_PREFIX
+    reverse = {v: k for k, v in _COLLECTION_PREFIX.items()}
+    return reverse.get(prefix, "")
 
 
 # --------------------------------------------------------------------------- #

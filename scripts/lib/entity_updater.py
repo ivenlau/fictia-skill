@@ -327,3 +327,144 @@ def update_entities_from_chapter(
     if not changes:
         return []
     return apply_entity_changes(store, changes, chapter)
+
+
+# --------------------------------------------------------------------------- #
+# 从写作备注提取关系三元组（规则抽取）
+# --------------------------------------------------------------------------- #
+
+
+def extract_relations_from_chapter_notes(
+    chapter_text: str, chapter: int
+) -> list[tuple[str, str, str, str]]:
+    """从章节的写作备注中提取关系三元组。
+
+    解析策略：
+      1. 伏笔操作 → (伏笔, 关联, 角色/事件)
+      2. 人物状态更新 → (事件/场景, 影响, 角色)
+      3. 地点变更 → (角色, 位于, 地点)
+      4. 物品状态 → (角色, 持有, 物品)
+      5. 事件结案 → (事件, 影响, 相关实体)
+
+    Returns:
+        [(source_id, rel_type, target_id, text), ...]
+    """
+    from lib.entity_schema import make_entity_id, make_slug
+
+    m = WRITING_NOTES_RE.search(chapter_text)
+    if not m:
+        return []
+
+    notes_text = chapter_text[m.start():]
+    triples: list[tuple[str, str, str, str]] = []
+
+    # 1. 伏笔操作 → 揭示关系
+    fo_pattern = re.compile(
+        r"[-*]\s*(埋设|推进|回收|铺垫|强化)[：:]\s*(.+)",
+        re.IGNORECASE,
+    )
+    for match in fo_pattern.finditer(notes_text):
+        op = match.group(1).strip()
+        rest = match.group(2).strip()
+
+        # 提取伏笔 ID
+        id_match = re.match(r"(?:伏笔ID[-_])?([A-Z]+\d+|F\d+)[：:（(\s]*(.*)", rest)
+        fo_id_str = id_match.group(1) if id_match else ""
+        desc = id_match.group(2).strip() if id_match else rest
+
+        if fo_id_str:
+            fo_slug = make_slug(fo_id_str)
+            fo_entity_id = make_entity_id("foreshadowing", fo_slug)
+
+            # 尝试从描述中提取角色名
+            char_match = re.match(r"([一-鿿]{2,4})", desc)
+            if char_match:
+                char_name = char_match.group(1)
+                char_slug = make_slug(char_name)
+                char_id = make_entity_id("characters", char_slug)
+                triples.append((
+                    fo_entity_id, "reveals", char_id,
+                    f"伏笔 {fo_id_str} 揭示 {char_name} 相关线索",
+                ))
+
+    # 2. 人物状态更新 → 影响关系
+    char_pattern = re.compile(r"人物状态更新[：:]\s*(.+)", re.IGNORECASE)
+    for match in char_pattern.finditer(notes_text):
+        update_text = match.group(1).strip()
+        name_match = re.match(r"([一-鿿]{2,4})", update_text)
+        if name_match:
+            char_name = name_match.group(1)
+            char_slug = make_slug(char_name)
+            char_id = make_entity_id("characters", char_slug)
+            # 关联到当前章节的事件（如果有的话）
+            evt_slug = make_slug(f"ch{chapter:02d}_state_update")
+            evt_id = make_entity_id("events", evt_slug)
+            triples.append((
+                evt_id, "affects", char_id,
+                f"第{chapter}章：{update_text}",
+            ))
+
+    # 3. 地点变更 → 位于关系
+    loc_pattern = re.compile(
+        r"地点变更[：:]\s*(.+?)[\s]*[→→][\s]*(?:state[：:]?\s*)?(\w+)",
+        re.IGNORECASE,
+    )
+    for match in loc_pattern.finditer(notes_text):
+        loc_name = match.group(1).strip()
+        loc_slug = make_slug(loc_name)
+        loc_id = make_entity_id("locations", loc_slug)
+        # 地点变更暗示有角色到达该地点
+        triples.append((
+            loc_id, "located_at", loc_id,
+            f"第{chapter}章：{loc_name} 状态变更",
+        ))
+
+    # 4. 物品状态 → 持有关系
+    item_pattern = re.compile(
+        r"物品状态[：:]\s*(.+?)[\s]*[→→][\s]*(?:state[：:]?\s*)?(\w+)",
+        re.IGNORECASE,
+    )
+    for match in item_pattern.finditer(notes_text):
+        item_name = match.group(1).strip()
+        new_state = match.group(2).strip()
+        item_slug = make_slug(item_name)
+        item_id = make_entity_id("items", item_slug)
+
+        if new_state in ("owned", "discovered"):
+            # 尝试从上下文推断持有者
+            # 简单策略：在伏笔/角色更新中找最近提到的角色
+            char_name = _find_nearest_character(notes_text, match.start())
+            if char_name:
+                char_slug = make_slug(char_name)
+                char_id = make_entity_id("characters", char_slug)
+                triples.append((
+                    char_id, "owns", item_id,
+                    f"{char_name} 获得物品「{item_name}」（第{chapter}章）",
+                ))
+
+    # 5. 事件结案 → 影响关系
+    evt_pattern = re.compile(
+        r"事件结案[：:]\s*(.+?)[\s]*[→→][\s]*(?:state[：:]?\s*)?(\w+)",
+        re.IGNORECASE,
+    )
+    for match in evt_pattern.finditer(notes_text):
+        evt_name = match.group(1).strip()
+        evt_slug = make_slug(evt_name)
+        evt_id = make_entity_id("events", evt_slug)
+        # 事件结案可能影响当前章节的所有参与者
+        triples.append((
+            evt_id, "affects", evt_id,
+            f"事件「{evt_name}」在第{chapter}章结案",
+        ))
+
+    return triples
+
+
+def _find_nearest_character(text: str, position: int) -> str | None:
+    """在文本中查找离指定位置最近的中文人名（2-4字）。"""
+    # 在 position 之前的文本中查找最后出现的人名
+    before = text[:position]
+    matches = list(re.finditer(r"[一-鿿]{2,4}", before))
+    if matches:
+        return matches[-1].group(0)
+    return None

@@ -20,6 +20,10 @@ from lib.entity_schema import (
     is_valid_transition,
     make_entity_id,
     parse_entity_id,
+    make_relation_id,
+    make_relation_slug,
+    parse_relation_id,
+    RELATION_TYPES,
 )
 
 # 软导入 zvec（与 vector.py 一致的模式）
@@ -387,6 +391,304 @@ class EntityStore:
                 pass
 
         return results
+
+    # ---- 关系（Relations）写入 ----
+
+    def upsert_relation(
+        self,
+        source_id: str,
+        target_id: str,
+        rel_type: str,
+        text: str,
+        chapter: int | None = None,
+        confidence: float = 1.0,
+        state: str = "active",
+        extra_fields: dict | None = None,
+    ) -> str:
+        """写入或更新一条关系。返回关系文档 id。"""
+        rel_id = make_relation_id(source_id, rel_type, target_id)
+        vec = self.provider.embed([text])[0]
+        fields = {
+            "text": text,
+            "state": state,
+            "state_ch": chapter,
+            "name": f"{source_id} --[{rel_type}]--> {target_id}",
+            "tags": "",
+            "related": "",
+            "version": 1,
+            "archived": "false",
+            "source_id": source_id,
+            "target_id": target_id,
+            "rel_type": rel_type,
+            "chapter": chapter,
+            "confidence": str(confidence),
+            **(extra_fields or {}),
+        }
+        zdoc = _ZVEC.Doc(id=rel_id, vectors={"vec": vec}, fields=fields)
+        col = self._col("relations")
+        col.insert([zdoc])
+        return rel_id
+
+    def upsert_relations(
+        self,
+        triples: list[tuple[str, str, str, str]],
+        chapter: int | None = None,
+        confidence: float = 1.0,
+    ) -> int:
+        """批量写入关系。
+
+        Args:
+            triples: [(source_id, rel_type, target_id, text), ...]
+            chapter: 章节号
+            confidence: 置信度
+
+        Returns:
+            写入数量（跳过已存在的）。
+        """
+        if not triples:
+            return 0
+
+        # 过滤已存在的关系
+        existing = self._get_existing_relation_ids()
+        new_triples = []
+        for src, rel, tgt, text in triples:
+            rel_id = make_relation_id(src, rel, tgt)
+            if rel_id not in existing:
+                new_triples.append((src, rel, tgt, text, rel_id))
+
+        if not new_triples:
+            return 0
+
+        # 批量嵌入
+        texts = [t[3] for t in new_triples]
+        vectors = self._embed_in_batches(texts)
+
+        zdocs = []
+        for (src, rel, tgt, text, rel_id), vec in zip(new_triples, vectors):
+            fields = {
+                "text": text,
+                "state": "active",
+                "state_ch": chapter,
+                "name": f"{src} --[{rel}]--> {tgt}",
+                "tags": "",
+                "related": "",
+                "version": 1,
+                "archived": "false",
+                "source_id": src,
+                "target_id": tgt,
+                "rel_type": rel,
+                "chapter": chapter,
+                "confidence": str(confidence),
+            }
+            zdocs.append(_ZVEC.Doc(id=rel_id, vectors={"vec": vec}, fields=fields))
+
+        col = self._col("relations")
+        col.insert(zdocs)
+        return len(zdocs)
+
+    def _get_existing_relation_ids(self) -> set[str]:
+        """获取所有已有关系的 id 集合（用于去重）。"""
+        col = self._col("relations")
+        try:
+            hits = col.query(
+                _ZVEC.VectorQuery("vec", vector=[0.0] * self.dim),
+                topk=10000,
+            )
+            return {self._doc_id(h) for h in hits}
+        except Exception:
+            return set()
+
+    # ---- 关系查询 ----
+
+    def get_relation(self, relation_id: str) -> dict | None:
+        """获取单条关系。"""
+        col = self._col("relations")
+        try:
+            hits = col.query(
+                _ZVEC.VectorQuery("vec", vector=[0.0] * self.dim),
+                topk=10000,
+                filter=f"id = '{relation_id}'",
+            )
+            if hits:
+                return self._hit_to_dict(hits[0])
+        except Exception:
+            pass
+        return None
+
+    def list_relations(
+        self,
+        entity_id: str | None = None,
+        rel_type: str | None = None,
+        direction: str = "both",
+    ) -> list[dict]:
+        """列出关系。
+
+        Args:
+            entity_id: 过滤指定实体的关系（作为 source 或 target）
+            rel_type: 过滤关系类型
+            direction: "out"（source=entity_id）、"in"（target=entity_id）、"both"
+        """
+        col = self._col("relations")
+        try:
+            hits = col.query(
+                _ZVEC.VectorQuery("vec", vector=[0.0] * self.dim),
+                topk=10000,
+            )
+        except Exception:
+            return []
+
+        results = []
+        for h in hits:
+            d = self._hit_to_dict(h)
+            if d.get("archived") == "true":
+                continue
+            if d.get("state") == "dissolved":
+                continue
+
+            src = d.get("source_id", "")
+            tgt = d.get("target_id", "")
+
+            if entity_id:
+                if direction == "out" and src != entity_id:
+                    continue
+                if direction == "in" and tgt != entity_id:
+                    continue
+                if direction == "both" and src != entity_id and tgt != entity_id:
+                    continue
+
+            if rel_type and d.get("rel_type") != rel_type:
+                continue
+
+            results.append(d)
+
+        return results
+
+    def search_relations(
+        self,
+        query: str,
+        top_k: int = 10,
+        entity_id: str | None = None,
+        rel_type: str | None = None,
+        vec: list[float] | None = None,
+    ) -> list[dict]:
+        """语义搜索关系。"""
+        col = self._col("relations")
+        if vec is None:
+            vec = self.provider.embed([query])[0]
+        try:
+            hits = col.query(_ZVEC.VectorQuery("vec", vector=vec), topk=top_k * 3)
+        except Exception:
+            return []
+
+        results = []
+        for h in hits:
+            d = self._hit_to_dict(h)
+            if d.get("archived") == "true":
+                continue
+            if d.get("state") == "dissolved":
+                continue
+            if entity_id:
+                src = d.get("source_id", "")
+                tgt = d.get("target_id", "")
+                if src != entity_id and tgt != entity_id:
+                    continue
+            if rel_type and d.get("rel_type") != rel_type:
+                continue
+            results.append(d)
+            if len(results) >= top_k:
+                break
+        return results
+
+    # ---- 图查询 ----
+
+    def get_neighbors(
+        self,
+        entity_id: str,
+        rel_type: str | None = None,
+        depth: int = 1,
+    ) -> list[dict]:
+        """图谱邻居查询：查找与指定实体直接关联的所有实体。
+
+        Args:
+            entity_id: 实体 ID（如 "char_lin_yuan_v001"）
+            rel_type: 过滤关系类型
+            depth: 查询深度（目前只支持 1）
+
+        Returns:
+            邻居列表，每个元素包含 neighbor_id, rel_type, rel_direction, relation
+        """
+        relations = self.list_relations(entity_id=entity_id, rel_type=rel_type)
+
+        neighbors = []
+        for rel in relations:
+            src = rel.get("source_id", "")
+            tgt = rel.get("target_id", "")
+
+            if src == entity_id:
+                neighbor_id = tgt
+                direction = "out"
+            else:
+                neighbor_id = src
+                direction = "in"
+
+            neighbors.append({
+                "neighbor_id": neighbor_id,
+                "rel_type": rel.get("rel_type", ""),
+                "direction": direction,
+                "relation_text": rel.get("text", ""),
+                "relation_id": rel.get("id", ""),
+                "chapter": rel.get("chapter"),
+                "confidence": rel.get("confidence", "1.0"),
+            })
+
+        return neighbors
+
+    def find_path(
+        self,
+        from_id: str,
+        to_id: str,
+        max_depth: int = 3,
+    ) -> list[dict] | None:
+        """BFS 查找两个实体之间的最短路径。
+
+        Returns:
+            路径列表 [{node: id, edge: rel_type, direction}, ...] 或 None
+        """
+        if from_id == to_id:
+            return [{"node": from_id}]
+
+        from collections import deque
+
+        visited = {from_id}
+        queue = deque([(from_id, [{"node": from_id}])])
+
+        for _ in range(max_depth):
+            next_queue = deque()
+            while queue:
+                current, path = queue.popleft()
+                neighbors = self.get_neighbors(current)
+
+                for nb in neighbors:
+                    nb_id = nb["neighbor_id"]
+                    if nb_id in visited:
+                        continue
+
+                    new_path = path + [{
+                        "node": nb_id,
+                        "edge": nb["rel_type"],
+                        "direction": nb["direction"],
+                        "relation_text": nb["relation_text"],
+                    }]
+
+                    if nb_id == to_id:
+                        return new_path
+
+                    visited.add(nb_id)
+                    next_queue.append((nb_id, new_path))
+
+            queue = next_queue
+
+        return None
 
     # ---- 统计 ----
 
