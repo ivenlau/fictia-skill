@@ -219,7 +219,29 @@ def cmd_stage(args: argparse.Namespace) -> int:
             P.increment_chapters(data, 1)
             P.save_project(root, data)
             ch = data.get("chapters", {})
-            print(f"chapters: written={ch.get('written')}, confirmed={ch.get('confirmed')}")
+            confirmed = ch.get("confirmed", 0)
+            print(f"chapters: written={ch.get('written')}, confirmed={confirmed}")
+
+            # 自动从章节中抽取关系（后台，不阻塞）
+            if _ENTITY_OK and confirmed > 0:
+                try:
+                    store = ES.open_entity_store_with_default_provider(root)
+                    # 查找刚确认的章节文件
+                    ch_dir = root / "chapters"
+                    candidates = list(ch_dir.glob(f"ch{confirmed:02d}*.md")) if ch_dir.is_dir() else []
+                    if not candidates:
+                        ch_dir = root / "chapters" / "drafts"
+                        candidates = list(ch_dir.glob(f"ch{confirmed:02d}*.md")) if ch_dir.is_dir() else []
+                    if candidates:
+                        chapter_text = candidates[0].read_text(encoding="utf-8")
+                        from lib.entity_updater import extract_relations_from_chapter_notes
+                        triples = extract_relations_from_chapter_notes(chapter_text, confirmed)
+                        if triples:
+                            n = store.upsert_relations(triples, chapter=confirmed)
+                            print(f"✓ 自动抽取关系: {n} 条（第{confirmed}章）")
+                except Exception as e:
+                    print(f"⚠ 关系抽取跳过: {e}")
+
             return 0
         if action == "set":
             ch = data.setdefault("chapters", {"total": 0, "written": 0, "confirmed": 0, "outlines": {}})
@@ -757,6 +779,219 @@ def cmd_notes(args: argparse.Namespace) -> int:
     return 2
 
 
+def cmd_graph(args: argparse.Namespace) -> int:
+    """知识图谱管理。"""
+    if not _ENTITY_OK:
+        sys.stderr.write("错误：entity 模块导入失败。\n")
+        return 2
+    try:
+        root = _resolve_root(args)
+    except SystemExit:
+        return 2
+
+    try:
+        store = ES.open_entity_store_with_default_provider(root)
+    except Exception as e:
+        sys.stderr.write(f"错误：初始化 entity store 失败：{e}\n")
+        return 2
+
+    sub_cmd = args.graph_cmd
+
+    # graph build
+    if sub_cmd == "build":
+        try:
+            from lib.relation_extractors import build_knowledge_graph
+        except ImportError:
+            sys.stderr.write("错误：lib.relation_extractors 导入失败\n")
+            return 2
+        try:
+            count = build_knowledge_graph(store, root)
+        except Exception as e:
+            sys.stderr.write(f"错误：构建图谱失败：{e}\n")
+            return 2
+        print(f"✓ 知识图谱已构建：{count} 条关系")
+        return 0
+
+    # graph status
+    if sub_cmd == "status":
+        try:
+            relations = store.list_relations()
+            print(f"关系总数: {len(relations)}")
+            # 按类型统计
+            by_type: dict[str, int] = {}
+            for r in relations:
+                rt = r.get("rel_type", "unknown")
+                by_type[rt] = by_type.get(rt, 0) + 1
+            if by_type:
+                print("按类型:")
+                for rt, cnt in sorted(by_type.items(), key=lambda x: -x[1]):
+                    print(f"  {rt}: {cnt}")
+            # 按状态统计
+            by_state: dict[str, int] = {}
+            for r in relations:
+                st = r.get("state", "unknown")
+                by_state[st] = by_state.get(st, 0) + 1
+            if by_state:
+                print("按状态:")
+                for st, cnt in sorted(by_state.items(), key=lambda x: -x[1]):
+                    print(f"  {st}: {cnt}")
+        except Exception as e:
+            print(f"（relations collection 不存在或为空：{e}）")
+        return 0
+
+    # graph neighbors <entity_id>
+    if sub_cmd == "neighbors":
+        entity_id = args.entity_id or args.entity_id_or_from
+        if not entity_id:
+            sys.stderr.write("用法: graph neighbors <entity_id> [--rel-type TYPE]\n")
+            return 2
+        try:
+            neighbors = store.get_neighbors(entity_id, rel_type=args.rel_type)
+        except Exception as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if not neighbors:
+            print(f"（{entity_id} 无邻居）")
+            return 0
+        print(f"{entity_id} 的邻居 ({len(neighbors)}):")
+        for nb in neighbors:
+            direction = "→" if nb["direction"] == "out" else "←"
+            print(f"  {direction} {nb['neighbor_id']}  [{nb['rel_type']}]  {nb['relation_text']}")
+        return 0
+
+    # graph path <from_id> <to_id>
+    if sub_cmd == "path":
+        from_id = args.from_id or args.entity_id_or_from
+        to_id = args.to_id_arg or args.to_id
+        if not from_id or not to_id:
+            sys.stderr.write("用法: graph path <from_id> <to_id> [--max-depth N]\n")
+            return 2
+        try:
+            path = store.find_path(from_id, to_id, max_depth=args.max_depth)
+        except Exception as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if path is None:
+            print(f"（未找到从 {from_id} 到 {to_id} 的路径）")
+            return 1
+        print(f"路径 ({len(path)} 步):")
+        for i, step in enumerate(path):
+            if i == 0:
+                print(f"  {step['node']}")
+            else:
+                direction = "→" if step.get("direction") == "out" else "←"
+                print(f"    {direction} [{step.get('edge', '?')}] {step.get('relation_text', '')}")
+                print(f"  {step['node']}")
+        return 0
+
+    # graph search <query>
+    if sub_cmd == "search":
+        query = args.query
+        if not query:
+            sys.stderr.write("用法: graph search \"<query>\" [--top-k N]\n")
+            return 2
+        try:
+            results = store.search_relations(query, top_k=args.top_k)
+        except Exception as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+        if not results:
+            print("（无命中）")
+            return 0
+        for i, r in enumerate(results, 1):
+            src = r.get("source_id", "?")
+            tgt = r.get("target_id", "?")
+            rt = r.get("rel_type", "?")
+            text = r.get("text", "")
+            score = r.get("score", 0)
+            ch = r.get("chapter", "-")
+            print(f"[{i}] {src} --[{rt}]--> {tgt}  score={score:.4f} ch={ch}")
+            if text:
+                snippet = text.replace("\n", " ").strip()
+                if len(snippet) > 120:
+                    snippet = snippet[:120] + "..."
+                print(f"    > {snippet}")
+        return 0
+
+    # graph extract --chapter N
+    if sub_cmd == "extract":
+        ch_str = args.chapter
+        if not ch_str:
+            sys.stderr.write("用法: graph extract --chapter <N>\n")
+            return 2
+        ch = int(ch_str)
+
+        # 查找章节文件
+        ch_dir = root / "chapters"
+        candidates = list(ch_dir.glob(f"ch{ch:02d}*.md")) if ch_dir.is_dir() else []
+        if not candidates:
+            ch_dir = root / "chapters" / "drafts"
+            candidates = list(ch_dir.glob(f"ch{ch:02d}*.md")) if ch_dir.is_dir() else []
+        if not candidates:
+            sys.stderr.write(f"错误：未找到 ch{ch:02d}*.md\n")
+            return 2
+
+        chapter_text = candidates[0].read_text(encoding="utf-8")
+
+        # 规则抽取
+        from lib.entity_updater import extract_relations_from_chapter_notes
+        note_triples = extract_relations_from_chapter_notes(chapter_text, ch)
+        total = 0
+        if note_triples:
+            count = store.upsert_relations(note_triples, chapter=ch)
+            total += count
+            print(f"  规则抽取: {count} 条关系")
+
+        print(f"✓ 第{ch}章关系抽取完成: 共 {total} 条新关系")
+        return 0
+
+    # graph export
+    if sub_cmd == "export":
+        try:
+            relations = store.list_relations()
+        except Exception as e:
+            sys.stderr.write(f"错误：{e}\n")
+            return 2
+
+        # 收集节点和边
+        node_ids: set[str] = set()
+        edges = []
+        for rel in relations:
+            src = rel.get("source_id", "")
+            tgt = rel.get("target_id", "")
+            node_ids.add(src)
+            node_ids.add(tgt)
+            edges.append({
+                "source": src,
+                "target": tgt,
+                "rel_type": rel.get("rel_type", ""),
+                "text": rel.get("text", ""),
+            })
+
+        nodes = []
+        for nid in node_ids:
+            parts = nid.split("_", 1)
+            prefix = parts[0] if parts else ""
+            from lib.entity_schema import _COLLECTION_PREFIX
+            reverse = {v: k for k, v in _COLLECTION_PREFIX.items()}
+            collection = reverse.get(prefix, "unknown")
+            nodes.append({"id": nid, "collection": collection})
+
+        import json
+        output = {"nodes": nodes, "edges": edges}
+        out_path = root / ".fictia-cache" / "graph-export.json"
+        out_path.parent.mkdir(exist_ok=True)
+        out_path.write_text(json.dumps(output, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"✓ 图谱已导出: {out_path}")
+        print(f"  节点: {len(nodes)}, 边: {len(edges)}")
+        return 0
+
+    sys.stderr.write(
+        "用法: graph build|status|neighbors|path|search|extract|export [...]\n"
+    )
+    return 2
+
+
 def cmd_vector(args: argparse.Namespace) -> int:
     """向量检索管理（RAG）。"""
     if not _VECTOR_OK:
@@ -957,6 +1192,16 @@ def cmd_entity(args: argparse.Namespace) -> int:
             except Exception as e:
                 sys.stderr.write(f"  ⚠ {col_name}: {e}\n")
         print(f"✓ entity index-all: total {total} entities")
+
+        # 自动构建知识图谱
+        try:
+            from lib.relation_extractors import build_knowledge_graph
+            rel_count = build_knowledge_graph(store, root)
+            if rel_count > 0:
+                print(f"✓ 知识图谱已构建: {rel_count} 条关系")
+        except Exception as e:
+            print(f"⚠ 知识图谱构建跳过: {e}")
+
         return 0
 
     # entity index <collection>
@@ -1254,6 +1499,26 @@ def build_parser() -> argparse.ArgumentParser:
                        help="search/clear 限定 collection")
     p_vec.add_argument("--yes", action="store_true", help="clear 不加确认（用于批量脚本）")
     p_vec.set_defaults(func=cmd_vector)
+
+    # graph（知识图谱管理）
+    p_graph = sub.add_parser("graph", help="知识图谱管理（实体关系网络）")
+    p_graph.add_argument("graph_cmd",
+                         choices=["build", "status", "neighbors", "path",
+                                  "search", "extract", "export"],
+                         help="子操作")
+    p_graph.add_argument("entity_id_or_from", nargs="?",
+                         help="neighbors 用的实体 ID，或 path 用的起始 ID")
+    p_graph.add_argument("to_id", nargs="?",
+                         help="path 用的目标 ID")
+    p_graph.add_argument("--entity-id", help="neighbors 用的实体 ID")
+    p_graph.add_argument("--from-id", help="path 用的起始 ID")
+    p_graph.add_argument("--to-id-arg", dest="to_id_arg", help="path 用的目标 ID")
+    p_graph.add_argument("--rel-type", help="neighbors/search 用的关系类型过滤")
+    p_graph.add_argument("--max-depth", type=int, default=3, help="path 最大搜索深度（默认 3）")
+    p_graph.add_argument("--query", help="search 用的查询语句")
+    p_graph.add_argument("--top-k", type=int, default=10, help="search 命中数（默认 10）")
+    p_graph.add_argument("--chapter", "-c", help="extract 用的章节号")
+    p_graph.set_defaults(func=cmd_graph)
 
     # entity（动态写作空间 — 实体管理）
     _entity_collections = list(ESchema.ENTITY_COLLECTIONS) if _ENTITY_OK else [

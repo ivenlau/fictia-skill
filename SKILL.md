@@ -191,6 +191,7 @@ fictia vector index-source
 | `easter_eggs` | 彩蛋 | planted → hinted → discoverable → revealed |
 | `storylines` | 故事线 | dormant → active → escalating → climax → resolved |
 | `timeline` | 时间线 | past → current → foreshadowed |
+| `relations` | 关系 | active → changed → dissolved |
 
 ### 启用
 
@@ -261,6 +262,118 @@ fictia entity update characters char_lin_yuan_v001 --state major_change --state-
 实体数据存放在 `<project>/.fictia/zvec/{characters,locations,items,events,foreshadowing,easter_eggs,storylines,timeline}/`，已加入 `.gitignore`。
 
 与现有的 chunk-based 全文检索（chapters/notes/sources）并存——chunk 用于模糊语义搜索，entity 用于精确状态查询。
+
+---
+
+## 知识图谱（可选 Graph RAG）
+
+适用场景：需要查询实体间关系网络（如"林远的师徒关系"、"哪些角色参与了北域围猎"、"伏笔 F001 关联哪些角色"）。
+
+### 核心概念
+
+在 8 个 entity collection 之上，新增 `relations` collection 存储实体间的关系三元组：
+
+```
+(源实体) --[关系类型]--> (目标实体)
+例: (林远) --[mentor]--> (清风长老)
+```
+
+**支持 20+ 种关系类型**：friend、enemy、mentor、family、lover、ally、rival、protects、owns、participates、causes、affects、reveals、located_at、belongs_to、key_char、related_to 等。
+
+### 启用
+
+同向量检索和动态写作空间，需先安装 zvec 和选择 embedding 模式。
+
+### 构建图谱
+
+**自动构建**（推荐）：`entity index-all` 会自动从已有实体字段构建知识图谱：
+
+```bash
+fictia entity index-all
+# → characters: 12 entities
+# → locations: 8 entities
+# → ...
+# ✓ 知识图谱已构建: 47 条关系
+```
+
+**手动构建**：
+
+```bash
+fictia graph build
+```
+
+数据来源（自动从已有字段提取，无需手动维护）：
+- `characters/*.md` 的 `relationships` 字段 → 角色间关系
+- `events` 的 `participants`/`causes`/`effects` → 事件因果链
+- `storylines` 的 `key_chars` → 故事线-角色绑定
+- `items` 的 `owner` → 物品归属
+- 所有实体的 `related` 字段 → 通用关联
+
+### 图谱查询
+
+```bash
+fictia graph status                          # 图谱统计（关系数、类型分布）
+fictia graph neighbors char_lin_yuan_v001    # 某角色的关系网
+fictia graph neighbors char_lin_yuan_v001 --rel-type mentor  # 按关系类型过滤
+fictia graph path char_lin_yuan_v001 loc_qingyun_v001        # 两实体间最短路径
+fictia graph search "师徒关系"                # 语义搜索关系
+fictia graph search "林远参与的事件" --top-k 5
+```
+
+### 章节后自动抽取
+
+**自动触发**（推荐）：`stage chapter increment` 会自动从章节写作备注中抽取新关系：
+
+```bash
+fictia stage chapter increment
+# chapters: written=3, confirmed=3
+# ✓ 自动抽取关系: 2 条（第3章）
+```
+
+**手动抽取**：
+
+```bash
+fictia graph extract --chapter 3
+```
+
+写作备注中支持抽取的关系信号：
+- 伏笔操作 → (伏笔, reveals, 角色)
+- 人物状态更新 → (事件, affects, 角色)
+- 物品状态变更 → (角色, owns, 物品)
+- 事件结案 → (事件, affects, 相关实体)
+
+### LLM 异步抽取（可选）
+
+配置 LLM API 后，可从章节正文自动抽取更丰富的关系：
+
+```bash
+export FICTIA_LLM_API_BASE=https://api.openai.com/v1
+export FICTIA_LLM_API_KEY=sk-xxx
+
+# 通过 HTTP API 触发（需先启动 embed_server）
+curl -X POST http://127.0.0.1:8700/graph/extract \
+  -d '{"chapter": 3, "use_llm": true}'
+```
+
+### 图谱导出（可视化）
+
+```bash
+fictia graph export
+# → .fictia-cache/graph-export.json
+# 包含 nodes[] 和 edges[]，可直接用于 D3.js / ECharts 力导向图
+```
+
+### 集成到写作空间
+
+图谱查询已集成到 `EntityRetriever`，写作空间组装时会自动通过图谱展开关联实体：
+
+- **原有逻辑**：从 `related` 字段展开（逗号分隔字符串）
+- **增强逻辑**：同时从 `relations` collection 查询图谱邻居（1跳）
+- 双源合并去重，检索更全面
+
+### 实体数据位置
+
+关系数据存放在 `<project>/.fictia/zvec/relations/`，与 8 个 entity collection 并存。
 
 ---
 
