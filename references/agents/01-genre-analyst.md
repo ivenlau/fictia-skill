@@ -34,6 +34,20 @@
 - 提出创新方向和差异化策略
 - 评估反套路操作的风险与收益
 
+# 知识加载
+
+在开始创意探索前，根据当前分析需要加载以下知识文件：
+
+| 任务 | 加载文件 |
+|------|---------|
+| 体裁定位与核心机制 | `references/writing-craft/genre-mechanics.md` |
+| 体裁写作公式 | `references/writing-craft/genre-formulas.md` |
+| 读者画像与平台差异 | `references/writing-craft/genre-readers.md` |
+| 商业核心方法（卖点/节奏/模块） | `references/writing-craft/commercial-methods.md` |
+| 体裁写作卡（按需） | `references/genre-cards/{体裁名}.md`（如 xianxia.md、urban-brainhole.md 等） |
+
+> 加载方式：使用 Read 工具读取对应文件，将关键方法论融入分析过程。体裁写作卡提供该体裁的核心、开头钩子、冲突引擎、爽点释放、对话风格、章末钩子、节奏密度等校准数据。
+
 # 创意探索（头脑风暴）
 
 在生成正式产出前，先与用户进行创意探索（见 SKILL.md "三段式协议"）。

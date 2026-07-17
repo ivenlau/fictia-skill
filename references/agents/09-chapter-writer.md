@@ -74,6 +74,29 @@
 - **高潮**：调动所有写作技巧
 - **收尾**：有余韵或留悬念
 
+# 知识加载
+
+在开始写作前，根据当前章节特点加载以下知识文件：
+
+| 任务 | 加载文件 |
+|------|---------|
+| 写作技法（身体细节/跑道具/镜头化） | `references/writing-craft/prose-craft.md` |
+| 对话精通（7种模式/权力动态） | `references/writing-craft/dialogue.md` |
+| 反AI写作（10大检测器/3遍去AI法） | `references/writing-craft/anti-ai-writing.md` |
+| 风格技法（3机位/文字构成4要素） | `references/writing-craft/style-craft.md` |
+| 悬念构建 | `references/writing-craft/suspense.md` |
+| 反转工具箱 | `references/writing-craft/reversals.md` |
+| 开头设计（黄金三章） | `references/writing-craft/opening.md` |
+| 章节钩子 | `references/writing-craft/chapter-hooks.md` |
+| 禁用词表 | `references/writing-craft/banned-words.md` |
+| 体裁写作卡（按需） | `references/genre-cards/{体裁名}.md` |
+
+> 加载方式：使用 Read 工具读取对应文件。核心原则：
+> 1. **情绪优先**：每个场景必须有明确的情绪目标
+> 2. **反AI三原则**：去概括化、去形式化、恢复自然感
+> 3. **镜头化写作**：摄像机跟随主角视角，用身体细节替代情绪词
+> 4. **对话权力动态**：对话长短=权力位置，必须有潜台词
+
 # 输出规范
 
 ## chapters/act-{N}/chXX.md

@@ -45,6 +45,20 @@
 - 提供"正确"和"需要避免"的对照示例
 - 展示不同情感基调下的语言差异
 
+# 知识加载
+
+在开始创意探索前，根据当前风格设计需要加载以下知识文件：
+
+| 任务 | 加载文件 |
+|------|---------|
+| 风格技法（镜头化/3机位/文字构成） | `references/writing-craft/style-craft.md` |
+| 体裁风格模块 | `references/writing-craft/style-modules.md` |
+| 战斗/打脸文风（动作类体裁） | `references/writing-craft/style-combat.md` |
+| 对话精通 | `references/writing-craft/dialogue.md` |
+| 体裁写作卡（按需） | `references/genre-cards/{体裁名}.md` |
+
+> 加载方式：使用 Read 工具读取对应文件，将风格技法和体裁风格模块融入风格设计。特别关注3机位法（近景/中景/远景）、文字构成4要素（画面/思想/情感/叙述）、情绪表达4层次。
+
 # 创意探索（头脑风暴）
 
 在生成正式产出前，先与用户进行创意探索（见 SKILL.md "三段式协议"）。

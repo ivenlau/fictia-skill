@@ -4,6 +4,10 @@
 用途：向量索引发现、实体提取路由、增量更新检测。
 
 不依赖 zvec，可独立使用。
+
+支持两种文件来源：
+  1. 项目产出文件（project root 内）
+  2. 技能级参考文件（references/writing-craft/ + references/genre-cards/）
 """
 from __future__ import annotations
 

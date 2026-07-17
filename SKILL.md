@@ -491,6 +491,18 @@ python "${FICTIA_HOME}/scripts/fictia" brainstorm-mode status   # 查询
 | 10. 编辑审核 | `references/agents/10-editor.md` |
 | 11. 一致性校验 | `references/agents/11-consistency-checker.md` |
 
+### 步骤 1a：加载领域知识
+
+各 agent prompt 中包含 `# 知识加载` 章节，列出了该阶段需要加载的写作方法论知识文件。
+
+**知识文件位于两个目录**：
+- `references/writing-craft/` — 写作方法论知识库（20 个文件），涵盖反AI写作、情绪弧线、角色设计、大纲方法论、冲突设计、对话技法、风格技法等
+- `references/genre-cards/` — 体裁写作卡（8 个卡片），提供体裁校准数据（开头钩子、冲突引擎、爽点释放、节奏密度等）
+
+**加载方式**：按 agent prompt 中 `# 知识加载` 的表格，使用 Read 工具读取对应文件。不是所有文件都需要加载——根据当前任务特点选择性加载。
+
+**向量检索集成**：这些文件已纳入 RAG 索引（`vector_collection: writing-craft` 和 `genre-cards`），也可通过 `python "${FICTIA_HOME}/scripts/fictia" search` 进行语义检索。
+
 ### 步骤 2：收集上下文
 
 使用 CLI 组装上下文：
@@ -771,6 +783,20 @@ python "${FICTIA_HOME}/scripts/fictia" brainstorm-mode status   # 查询
 4. 检查 weave_notes：需要埋设/推进的伏笔、需要推进的支线。
 5. 执行阶段 9（章节写手 agent）。
 
+### 阶段 1a：确定性 Prose 检查（写后自动执行）
+
+章节写完后、进入 LLM 审核前，先运行确定性 AI 味检测脚本：
+
+```bash
+python "${FICTIA_HOME}/scripts/lib/prose_check.py" chapters/act-{N}/chXX.md
+```
+
+该脚本基于 18 条规则检测 AI 写作模式（禁用词、否定排比、音量反差腔、碎句号、比喻密度等），分 blocking 和 advisory 两级。
+
+- **有 blocking 发现** → 必须在进入 LLM 审核前修复
+- **仅有 advisory 发现** → 记录到写作备注，供 LLM 审核参考
+- **无发现** → 直接进入阶段 2
+
 ### 阶段 2：审核-修复循环
 
 【强制，最多 3 轮】每章写完后自动触发审核-修复循环。
@@ -971,6 +997,30 @@ python "${FICTIA_HOME}/scripts/fictia" brainstorm-mode status   # 查询
 - `references/project-structure.md` — 目录树、project.yaml schema、文件格式
 - `references/context-procedures.md` — 上下文压缩与提取流程
 - `references/agents/01-genre-analyst.md` 至 `references/agents/11-consistency-checker.md` — 各阶段 agent prompt
+- `references/writing-craft/` — 写作方法论知识库（20 个文件），各 agent 按需加载
+  - `anti-ai-writing.md` — 反AI写作（10大检测器、3遍去AI法）
+  - `emotional-arcs.md` — 情绪弧线设计（6种弧线类型）
+  - `character-design.md` — 角色设计方法论（3层标签、9维框架）
+  - `prose-craft.md` — 写作技法（身体细节、跑道具、镜头化写作）
+  - `dialogue.md` — 对话精通（7种模式、权力动态）
+  - `outline-methods.md` — 大纲方法论（8节点结构、满足感公式）
+  - `conflict.md` — 冲突设计（AB交织、高潮逆向）
+  - `commercial-methods.md` — 商业核心方法（卖点理论、6核心模块）
+  - `plot-emotion.md` — 情节-情绪系统（6种满足感、卡牌系统）
+  - `style-craft.md` — 风格技法（3机位法、文字构成4要素）
+  - `style-modules.md` — 体裁风格模块
+  - `style-combat.md` — 战斗/打脸文风
+  - `suspense.md` — 悬念构建系统
+  - `reversals.md` — 反转工具箱（7种反转类型）
+  - `opening.md` — 开头设计（黄金三章法则）
+  - `chapter-hooks.md` — 章节钩子（章首7种/章末13种）
+  - `genre-mechanics.md` — 体裁核心机制（金手指3代理论）
+  - `genre-formulas.md` — 体裁写作公式
+  - `genre-readers.md` — 体裁读者画像
+  - `banned-words.md` — 禁用词表
+- `references/genre-cards/` — 体裁写作卡（8 个卡片），按体裁按需加载
+  - `xianxia.md`、`urban-brainhole.md`、`xuanhuan.md`、`suspense.md`
+  - `historical.md`、`romance-ceo.md`、`sci-fi-apocalypse.md`、`era.md`
 - `scripts/README.md` — CLI 工具完整子命令文档
 
 ## CLI 工具（scripts/fictia）

@@ -40,6 +40,20 @@
 - 无明显拖沓或跳跃
 - 整体篇幅合理
 
+# 知识加载
+
+在开始创意探索前，根据当前架构设计需要加载以下知识文件：
+
+| 任务 | 加载文件 |
+|------|---------|
+| 故事结构理论 | `references/writing-craft/outline-methods.md` |
+| 冲突设计（AB交织/高潮逆向） | `references/writing-craft/conflict.md` |
+| 情绪弧线设计 | `references/writing-craft/emotional-arcs.md` |
+| 商业核心方法 | `references/writing-craft/commercial-methods.md` |
+| 体裁写作公式 | `references/writing-craft/genre-formulas.md` |
+
+> 加载方式：使用 Read 工具读取对应文件，将结构理论和冲突设计方法融入架构设计。特别关注满足感节奏公式（每章微爽点、每3章解1冲突、每7章1大爽点）和8节点故事结构。
+
 # 创意探索（头脑风暴）
 
 在生成正式产出前，先与用户进行创意探索（见 SKILL.md "三段式协议"）。

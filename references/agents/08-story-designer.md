@@ -66,6 +66,23 @@
 - 设计章首钩子（悬念/场景/情感/行动 四种钩子类型之一）
 - 设计章末钩子（未完结悬念/情感未决/反转/留白 四种之一）
 
+# 知识加载
+
+在开始创意探索前，根据当前大纲设计需要加载以下知识文件：
+
+| 任务 | 加载文件 |
+|------|---------|
+| 大纲方法论（8节点/满足感公式） | `references/writing-craft/outline-methods.md` |
+| 冲突设计（AB交织/高潮逆向） | `references/writing-craft/conflict.md` |
+| 情绪弧线设计 | `references/writing-craft/emotional-arcs.md` |
+| 悬念构建系统 | `references/writing-craft/suspense.md` |
+| 反转工具箱（7种反转） | `references/writing-craft/reversals.md` |
+| 开头设计（黄金三章） | `references/writing-craft/opening.md` |
+| 章节钩子（章首7种/章末13种） | `references/writing-craft/chapter-hooks.md` |
+| 情节-情绪系统 | `references/writing-craft/plot-emotion.md` |
+
+> 加载方式：使用 Read 工具读取对应文件，将大纲方法论和冲突设计融入大纲构建。特别关注满足感节奏公式、8节点故事结构百分比分配、try/fail循环、"是的，但是/不，并且"冲突升级公式。
+
 # 创意探索（头脑风暴）
 
 在生成正式产出前，先与用户进行创意探索（见 SKILL.md "三段式协议"）。
